@@ -1,0 +1,6 @@
+{
+  "name": "Text Social Network",
+  "description": "An open-source, text-only social media platform built with Jetpack Compose, Supabase, and Node.js.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
