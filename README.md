@@ -297,6 +297,12 @@ create policy "Allow insertion of notifications" on public.notifications for ins
     with check (auth.uid() = sender_id);
 create policy "Allow deletion of own notifications" on public.notifications for delete
     using (auth.uid() = recipient_id);
+
+-- 8. HAK AKSES (GRANTS)
+-- Memberikan hak akses tabel ke role API (anon dan authenticated)
+grant select on all tables in schema public to anon, authenticated;
+grant insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated, anon;
 ```
 
 ---
