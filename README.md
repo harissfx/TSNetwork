@@ -238,6 +238,8 @@ for each row execute function public.handle_new_user();
 -- Aktifkan keamanan RLS di semua tabel
 alter table public.profiles enable row level security;
 alter table public.posts enable row level security;
+alter table public.stories enable row level security;
+alter table public.story_views enable row level security;
 alter table public.comments enable row level security;
 alter table public.likes enable row level security;
 alter table public.follows enable row level security;
@@ -253,6 +255,30 @@ create policy "Allow owners to edit profile" on public.profiles for update using
 create policy "Allow public reading of posts" on public.posts for select using (true);
 create policy "Allow authenticated creation of posts" on public.posts for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of posts" on public.posts for delete using (auth.uid() = user_id);
+
+-- CERITA (STORIES): Semua orang bisa membaca cerita; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Allow public reading of stories" on public.stories for select using (true);
+create policy "Allow authenticated creation of stories" on public.stories for insert with check (auth.role() = 'authenticated');
+create policy "Allow owner deletion of stories" on public.stories for delete using (auth.uid() = user_id);
+
+-- RIWAYAT LIHAT CERITA (STORY VIEWS): Semua orang bisa membaca riwayat lihat cerita; hanya pengguna terautentikasi yang bisa menyisipkan
+create policy "Allow public reading of story views" on public.story_views for select using (true);
+create policy "Allow authenticated insertion of story views" on public.story_views for insert with check (auth.role() = 'authenticated');
+
+-- KOMENTAR: Semua orang bisa membaca komentar; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Allow public reading of comments" on public.comments for select using (true);
+create policy "Allow authenticated creation of comments" on public.comments for insert with check (auth.role() = 'authenticated');
+create policy "Allow owner deletion of comments" on public.comments for delete using (auth.uid() = user_id);
+
+-- LIKES: Semua orang bisa membaca likes; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Allow public reading of likes" on public.likes for select using (true);
+create policy "Allow authenticated creation of likes" on public.likes for insert with check (auth.role() = 'authenticated');
+create policy "Allow owner deletion of likes" on public.likes for delete using (auth.uid() = user_id);
+
+-- MENGIKUTI (FOLLOWS): Semua orang bisa melihat status mengikuti; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Allow public reading of follows" on public.follows for select using (true);
+create policy "Allow authenticated creation of follows" on public.follows for insert with check (auth.role() = 'authenticated');
+create policy "Allow owner deletion of follows" on public.follows for delete using (auth.uid() = follower_id);
 
 -- PERCAKAPAN CHAT: Hanya pengguna yang terlibat di dalam chat yang dapat melihat/memodifikasinya
 create policy "Allow selective reading of conversations" on public.conversations for select
