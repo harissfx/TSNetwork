@@ -70,7 +70,7 @@ class LoginViewModel : ViewModel() {
                     _error.value = when {
                         exception.code == 400 && exception.errorMsg.contains("Invalid login credentials", ignoreCase = true) -> "Incorrect email or password."
                         exception.code == 429 -> "Too many attempts. Please wait a few minutes."
-                        else -> "Login failed. Please try again."
+                        else -> "Login failed: ${exception.errorMsg}"
                     }
                 } else {
                     _error.value = "Login failed. Please try again."
@@ -148,8 +148,7 @@ class RegisterViewModel : ViewModel() {
                     _error.value = when {
                         exception.code == 429 -> "Too many attempts. Please wait a few minutes before trying again."
                         exception.code == 400 && exception.errorMsg.contains("User already registered", ignoreCase = true) -> "An account with this email already exists."
-                        exception.code == 422 -> "Invalid email or password format."
-                        else -> "Registration failed. Please try again."
+                        else -> "Registration failed: ${exception.errorMsg}"
                     }
                 } else {
                     val msg = exception?.message
