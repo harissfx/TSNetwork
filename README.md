@@ -288,6 +288,7 @@ create policy "Allow marking messages as read" on public.messages for update
         )
     );
 
+
 -- NOTIFIKASI: Pengguna hanya bisa melihat/menghapus notifikasi mereka sendiri; siapa pun yang terautentikasi bisa menyisipkannya
 create policy "Allow selective reading of notifications" on public.notifications for select
     using (auth.uid() = recipient_id);
