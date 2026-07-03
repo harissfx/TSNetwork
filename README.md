@@ -27,6 +27,7 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 create extension if not exists "uuid-ossp";
 
 -- Bersihkan tabel lama jika ada (agar skrip ini bisa dijalankan ulang tanpa error)
+drop trigger if exists on_auth_user_created on auth.users;
 drop table if exists public.notifications cascade;
 drop table if exists public.messages cascade;
 drop table if exists public.conversations cascade;
