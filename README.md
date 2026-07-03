@@ -232,6 +232,19 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
+-- SINKRONISASI: Salin data pengguna yang sudah terlanjur mendaftar tetapi belum memiliki profil
+insert into public.profiles (id, username, email, display_name, avatar_color, bio, is_private)
+select 
+    id,
+    coalesce(raw_user_meta_data->>'username', split_part(email, '@', 1)),
+    email,
+    coalesce(raw_user_meta_data->>'display_name', split_part(email, '@', 1)),
+    '#FF5722',
+    'Welcome to my profile!',
+    false
+from auth.users
+on conflict (id) do nothing;
+
 
 -- KEBIJAKAN KEAMANAN ROW LEVEL SECURITY (RLS)
 
