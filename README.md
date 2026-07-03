@@ -26,6 +26,18 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 -- Mengaktifkan ekstensi UUID generator
 create extension if not exists "uuid-ossp";
 
+-- Bersihkan tabel lama jika ada (agar skrip ini bisa dijalankan ulang tanpa error)
+drop table if exists public.notifications cascade;
+drop table if exists public.messages cascade;
+drop table if exists public.conversations cascade;
+drop table if exists public.follows cascade;
+drop table if exists public.likes cascade;
+drop table if exists public.comments cascade;
+drop table if exists public.story_views cascade;
+drop table if exists public.stories cascade;
+drop table if exists public.posts cascade;
+drop table if exists public.profiles cascade;
+
 -- 1. TABEL PROFIL (PROFILES)
 create table public.profiles (
     id uuid references auth.users on delete cascade primary key,
