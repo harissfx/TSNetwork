@@ -24,7 +24,7 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 
 ```sql
 -- Mengaktifkan ekstensi UUID generator
-create extension `if not exists "uuid-ossp";
+create extension if not exists "uuid-ossp";
 
 -- 1. TABEL PROFIL (PROFILES)
 create table public.profiles (
