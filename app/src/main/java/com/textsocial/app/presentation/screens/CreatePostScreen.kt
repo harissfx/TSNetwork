@@ -1,7 +1,10 @@
 package com.textsocial.app.presentation.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
@@ -10,10 +13,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.textsocial.app.di.ServiceLocator
+import com.textsocial.app.domain.model.User
+import com.textsocial.app.presentation.components.AvatarSize
+import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.CreatePostViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,6 +42,56 @@ fun CreatePostScreen(
 
     val maxChars = 500
     val charsRemaining = maxChars - text.length
+
+    // TextFieldValue lokal supaya kita tahu posisi kursor (dibutuhkan untuk deteksi
+    // "sedang mengetik @siapa" dan untuk menyisipkan username yang dipilih tepat di
+    // posisi yang benar), sementara `text` di ViewModel tetap jadi sumber data utama.
+    var fieldValue by remember { mutableStateOf(TextFieldValue(text)) }
+    var mentionSuggestions by remember { mutableStateOf<List<User>>(emptyList()) }
+
+    // Query mention aktif: teks setelah karakter "@" terakhir sebelum posisi kursor,
+    // selama belum ada spasi/baris baru di antaranya. Null berarti user sedang TIDAK
+    // mengetik mention, jadi dropdown tidak perlu tampil.
+    val activeMentionQuery: String? = remember(fieldValue) {
+        val cursor = fieldValue.selection.end
+        if (cursor <= 0) return@remember null
+        val beforeCursor = fieldValue.text.substring(0, cursor)
+        val atIndex = beforeCursor.lastIndexOf('@')
+        if (atIndex == -1) return@remember null
+        val between = beforeCursor.substring(atIndex + 1)
+        if (between.contains(' ') || between.contains('\n')) return@remember null
+        between
+    }
+
+    LaunchedEffect(activeMentionQuery) {
+        if (activeMentionQuery == null) {
+            mentionSuggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(250) // debounce ringan biar gak nembak API tiap huruf
+        val result = if (activeMentionQuery.isBlank()) {
+            // Baru ketik "@" tanpa huruf apa pun -> tampilkan akun "terdekat"
+            // (yang di-follow user), BUKAN seluruh isi database.
+            ServiceLocator.userRepository.getFollowingUsers()
+        } else {
+            ServiceLocator.userRepository.searchUsers(activeMentionQuery)
+        }
+        mentionSuggestions = result.getOrDefault(emptyList()).take(5)
+    }
+
+    fun onMentionUserSelected(user: User) {
+        val cursor = fieldValue.selection.end
+        val beforeCursor = fieldValue.text.substring(0, cursor)
+        val atIndex = beforeCursor.lastIndexOf('@')
+        if (atIndex == -1) return
+        val before = fieldValue.text.substring(0, atIndex)
+        val after = fieldValue.text.substring(cursor)
+        val newText = "$before@${user.username} $after"
+        val newCursorPos = before.length + user.username.length + 2
+        fieldValue = TextFieldValue(newText, TextRange(newCursorPos))
+        viewModel.onTextChange(newText)
+        mentionSuggestions = emptyList()
+    }
 
     LaunchedEffect(isFinished) {
         if (isFinished) {
@@ -94,8 +154,11 @@ fun CreatePostScreen(
                 }
 
                 TextField(
-                    value = text,
-                    onValueChange = { viewModel.onTextChange(it) },
+                    value = fieldValue,
+                    onValueChange = {
+                        fieldValue = it
+                        viewModel.onTextChange(it.text)
+                    },
                     placeholder = { Text("What's happening? Type #hashtags or mention @users...") },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -110,6 +173,46 @@ fun CreatePostScreen(
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp)
                 )
+
+                if (mentionSuggestions.isNotEmpty()) {
+                    Surface(
+                        tonalElevation = 4.dp,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp)
+                            .padding(bottom = 8.dp)
+                    ) {
+                        LazyColumn {
+                            items(mentionSuggestions) { user ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onMentionUserSelected(user) }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    UserAvatarComponent(
+                                        username = user.username,
+                                        avatarColor = user.avatarColor,
+                                        size = AvatarSize.COMPACT
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(text = user.username, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        if (!user.displayName.isNullOrBlank()) {
+                                            Text(
+                                                text = user.displayName,
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier

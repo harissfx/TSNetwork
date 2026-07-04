@@ -84,8 +84,7 @@ fun AppNavGraph(
                 onNavigateToCreateStory = { navController.navigate(Routes.CREATE_STORY) },
                 onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
                 onNavigateToDMs = { navController.navigate(Routes.DM_LIST) },
-                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) }
             )
         }
 
@@ -154,7 +153,8 @@ fun AppNavGraph(
                 onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
                 onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
                 onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) }
+                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) },
+                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
@@ -188,7 +188,8 @@ fun AppNavGraph(
                 otherUserId = uid,
                 otherUsername = uname,
                 viewModel = dmChatViewModel,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
             )
         }
 
@@ -204,7 +205,9 @@ fun AppNavGraph(
                 },
                 onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
                 onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) }
+                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) },
+                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
+                onNavigateToPostDetail = { postId -> navController.navigate(Routes.postDetail(postId)) }
             )
         }
 

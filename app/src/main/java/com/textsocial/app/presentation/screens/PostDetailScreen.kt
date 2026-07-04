@@ -10,6 +10,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Reply
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import androidx.compose.material3.*
@@ -39,6 +43,7 @@ fun PostDetailScreen(
     val comments by viewModel.comments.collectAsState()
     val commentText by viewModel.commentText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val replyingTo by viewModel.replyingTo.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(postId) {
@@ -64,37 +69,60 @@ fun PostDetailScreen(
                 tonalElevation = 8.dp,
                 modifier = Modifier.navigationBarsPadding()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextField(
-                        value = commentText,
-                        onValueChange = { viewModel.onCommentTextChange(it) },
-                        placeholder = { Text("Write your reply...") },
+                Column {
+                    // Fix #1: banner konteks "membalas ke @siapa" supaya jelas komentar
+                    // baru ini akan jadi balasan untuk komentar yang mana.
+                    replyingTo?.let { target ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Membalas @${target.username}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            IconButton(onClick = { viewModel.cancelReply() }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Batalkan balasan", modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .testTag("comment_input_field"),
-                        maxLines = 3,
-                        colors = TextFieldDefaults.colors(
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = MaterialTheme.shapes.medium
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { viewModel.addComment() },
-                        enabled = commentText.isNotBlank(),
-                        modifier = Modifier.testTag("send_comment_button")
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Send,
-                            contentDescription = "Send Reply",
-                            tint = if (commentText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        TextField(
+                            value = commentText,
+                            onValueChange = { viewModel.onCommentTextChange(it) },
+                            placeholder = { Text(if (replyingTo != null) "Tulis balasan..." else "Write your reply...") },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("comment_input_field"),
+                            maxLines = 3,
+                            colors = TextFieldDefaults.colors(
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = MaterialTheme.shapes.medium
                         )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = { viewModel.addComment() },
+                            enabled = commentText.isNotBlank(),
+                            modifier = Modifier.testTag("send_comment_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Send,
+                                contentDescription = "Send Reply",
+                                tint = if (commentText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
             }
@@ -248,68 +276,34 @@ fun PostDetailScreen(
                             }
                         }
                     } else {
-                        items(comments) { comment ->
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable { onNavigateToProfile(comment.userId) }
-                                    ) {
-                                        UserAvatarComponent(
-                                            username = comment.username,
-                                            avatarColor = comment.avatarColor,
-                                            size = AvatarSize.COMPACT
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = comment.username,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
-                                            Text(
-                                                text = "replying to @${post?.username}",
-                                                fontSize = 11.sp,
-                                                color = MaterialTheme.colorScheme.outline
-                                            )
-                                        }
-                                    }
+                        // Fix #1: kelompokkan komentar jadi top-level + balasannya, supaya
+                        // balasan tampil menjorok (indented) di bawah komentar induknya,
+                        // bukan tumpuk rata semua di satu list datar seperti sebelumnya.
+                        val topLevelComments = comments.filter { it.parentId == null }
+                        val repliesByParent = comments.filter { it.parentId != null }.groupBy { it.parentId }
 
-                                    val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
-                                    if (comment.userId == myId || post?.userId == myId) {
-                                        IconButton(onClick = { viewModel.deleteComment(comment.id) }) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Delete comment",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text(
-                                    text = comment.text,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    modifier = Modifier.padding(start = 42.dp),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Divider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(start = 42.dp)
+                        items(topLevelComments, key = { it.id }) { comment ->
+                            CommentRow(
+                                comment = comment,
+                                postOwnerId = post?.userId,
+                                isReply = false,
+                                onUserClick = onNavigateToProfile,
+                                onReplyClick = { viewModel.startReplyTo(comment) },
+                                onLikeClick = { viewModel.toggleCommentLike(comment) },
+                                onDeleteClick = { viewModel.deleteComment(comment.id) }
+                            )
+                        }
+                        topLevelComments.forEach { parent ->
+                            val childReplies = repliesByParent[parent.id] ?: emptyList()
+                            items(childReplies, key = { it.id }) { reply ->
+                                CommentRow(
+                                    comment = reply,
+                                    postOwnerId = post?.userId,
+                                    isReply = true,
+                                    onUserClick = onNavigateToProfile,
+                                    onReplyClick = { viewModel.startReplyTo(parent) },
+                                    onLikeClick = { viewModel.toggleCommentLike(reply) },
+                                    onDeleteClick = { viewModel.deleteComment(reply.id) }
                                 )
                             }
                         }
@@ -317,5 +311,108 @@ fun PostDetailScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CommentRow(
+    comment: com.textsocial.app.domain.model.Comment,
+    postOwnerId: String?,
+    isReply: Boolean,
+    onUserClick: (String) -> Unit,
+    onReplyClick: () -> Unit,
+    onLikeClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
+    val startPadding = if (isReply) 48.dp else 16.dp
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = startPadding, end = 16.dp, top = 10.dp, bottom = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { onUserClick(comment.userId) }
+            ) {
+                UserAvatarComponent(
+                    username = comment.username,
+                    avatarColor = comment.avatarColor,
+                    size = if (isReply) AvatarSize.COMPACT else AvatarSize.COMPACT
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = comment.username,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
+
+            if (comment.userId == myId || postOwnerId == myId) {
+                IconButton(onClick = onDeleteClick, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete comment",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = comment.text,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(start = 42.dp),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Fix #4: komentar cuma punya tombol Like (tanpa dislike/reaksi lain), plus
+        // tombol Reply untuk fix #1.
+        Row(
+            modifier = Modifier.padding(start = 42.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onLikeClick, modifier = Modifier.size(20.dp)) {
+                Icon(
+                    imageVector = if (comment.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Like comment",
+                    tint = if (comment.isLiked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            if (comment.likesCount > 0) {
+                Text(
+                    text = "${comment.likesCount}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = "Balas",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.clickable { onReplyClick() }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Divider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            modifier = Modifier.padding(start = 42.dp)
+        )
     }
 }

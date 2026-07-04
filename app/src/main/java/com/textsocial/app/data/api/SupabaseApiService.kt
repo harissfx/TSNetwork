@@ -61,8 +61,9 @@ interface SupabaseApiService {
 
     @POST("rest/v1/posts")
     suspend fun createPost(
-        @Body post: CreatePostRequest
-    ): Response<Void>
+        @Body post: CreatePostRequest,
+        @Header("Prefer") prefer: String = "return=representation"
+    ): Response<List<PostDto>>
 
     @DELETE("rest/v1/posts")
     suspend fun deletePost(
@@ -109,6 +110,24 @@ interface SupabaseApiService {
     @POST("rest/v1/comments")
     suspend fun createComment(
         @Body comment: CreateCommentRequest
+    ): Response<Void>
+
+    // --- Comment Likes ---
+    @GET("rest/v1/comment_likes")
+    suspend fun getCommentLikes(
+        @Query("comment_id") commentIdFilter: String, // e.g. "in.(id1,id2,id3)"
+        @Query("select") select: String = "*"
+    ): Response<List<CommentLikeDto>>
+
+    @POST("rest/v1/comment_likes")
+    suspend fun likeComment(
+        @Body like: CreateCommentLikeRequest
+    ): Response<Void>
+
+    @DELETE("rest/v1/comment_likes")
+    suspend fun unlikeComment(
+        @Query("comment_id") commentIdFilter: String,
+        @Query("user_id") userIdFilter: String
     ): Response<Void>
 
     // --- Follows ---
@@ -174,16 +193,38 @@ interface SupabaseApiService {
         @Query("order") order: String = "updated_at.desc"
     ): Response<List<ConversationDto>>
 
+    // Memastikan baris conversation ada sebelum mengirim pesan pertama, tanpa bergantung
+    // pada trigger database (yang ternyata tidak selalu aktif/ter-apply). "on_conflict=id"
+    // + "resolution=ignore-duplicates" membuat ini aman dipanggil berulang kali walau
+    // baris-nya sudah ada (tidak akan error/duplikat).
+    @POST("rest/v1/conversations?on_conflict=id")
+    suspend fun upsertConversation(
+        @Body request: UpsertConversationRequest,
+        @Header("Prefer") prefer: String = "resolution=ignore-duplicates,return=minimal"
+    ): Response<Void>
+
+    // "return=representation" supaya respons berisi baris pesan yang baru dibuat (id,
+    // created_at, dll) — dipakai untuk langsung menampilkan pesan di layar tanpa menunggu
+    // WebSocket realtime.
     @POST("rest/v1/messages")
     suspend fun sendMessage(
-        @Body message: SendMessageRequest
-    ): Response<Void>
+        @Body message: SendMessageRequest,
+        @Header("Prefer") prefer: String = "return=representation"
+    ): Response<List<MessageDto>>
 
     @PATCH("rest/v1/messages")
     suspend fun markMessagesAsRead(
         @Query("conversation_id") conversationFilter: String,
         @Query("sender_id") senderFilter: String, // e.g. "not.eq.my_id"
         @Body updates: MarkAsReadRequest = MarkAsReadRequest()
+    ): Response<Void>
+
+    // "Hapus untuk semua orang": update baris pesannya (bukan delete beneran) supaya
+    // tetap ada jejak, tapi kontennya diganti placeholder.
+    @PATCH("rest/v1/messages")
+    suspend fun deleteMessageForEveryone(
+        @Query("id") idFilter: String, // "eq.<messageId>"
+        @Body updates: DeleteMessageRequest = DeleteMessageRequest()
     ): Response<Void>
 
     // --- Notifications ---

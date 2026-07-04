@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +39,8 @@ fun ProfileScreen(
     onNavigateToSearch: () -> Unit,
     onNavigateToCreatePost: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToProfileMe: () -> Unit
+    onNavigateToProfileMe: () -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     val user by viewModel.user.collectAsState()
     val posts by viewModel.posts.collectAsState()
@@ -58,6 +60,15 @@ fun ProfileScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
+                    }
+                },
+                actions = {
+                    // Ikon pengaturan dipindah ke sini (pojok kanan atas Profile), sebelumnya
+                    // ada di layar Home/Feed. Hanya tampil kalau ini profil sendiri.
+                    if (user?.id == "me_id" || user?.id == currentUserId) {
+                        IconButton(onClick = onNavigateToSettings, modifier = Modifier.testTag("settings_button")) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -260,7 +271,7 @@ fun ProfileScreen(
                         items(posts) { post ->
                             PostItem(
                                 post = post,
-                                onLikeToggle = { /* Inline like toggle */ },
+                                onLikeToggle = { viewModel.toggleLike(post) },
                                 onPostClick = { onNavigateToPostDetail(post.id) },
                                 onUserClick = {},
                                 onHashtagClick = {},

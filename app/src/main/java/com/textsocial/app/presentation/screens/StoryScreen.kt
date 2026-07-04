@@ -45,7 +45,7 @@ fun StoryScreen(
     LaunchedEffect(currentStoryIndex, stories.size) {
         if (stories.isNotEmpty() && currentStoryIndex < stories.size) {
             val activeStory = stories[currentStoryIndex]
-            viewModel.markStoryAsViewed(activeStory.id)
+            viewModel.markStoryAsViewed(activeStory.id, activeStory.userId)
 
             progress = 0f
             while (progress < 1.0f) {
@@ -73,6 +73,8 @@ fun StoryScreen(
                 }
             } else if (currentStoryIndex < stories.size) {
                 val story = stories[currentStoryIndex]
+                val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
+                val isOwnStory = story.userId == myId
 
                 // Story Content Viewport
                 Column(
@@ -126,7 +128,6 @@ fun StoryScreen(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
                             if (story.userId == myId) {
                                 IconButton(onClick = {
                                     viewModel.deleteStory(story.id)
@@ -164,40 +165,44 @@ fun StoryScreen(
                         )
                     }
 
-                    // Footer / Views indicator
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                    // BUG SEBELUMNYA: jumlah & daftar viewer ditampilkan ke SEMUA orang yang
+                    // menonton story ini, padahal seharusnya hanya pemilik story yang boleh
+                    // melihat siapa saja yang sudah melihat story-nya.
+                    if (isOwnStory) {
+                        Box(
                             modifier = Modifier
-                                .background(Color.White.copy(alpha = 0.15f), CircleShape)
-                                .clickable { showViewersSheet = true }
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.RemoveRedEye,
-                                contentDescription = "Viewers icon",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${story.views.size} Views",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                                    .clickable { showViewersSheet = true }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.RemoveRedEye,
+                                    contentDescription = "Viewers icon",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "${story.views.size} Views",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
 
-                // Inline Bottom Viewers Pane overlay
+                // Inline Bottom Viewers Pane overlay — hanya untuk pemilik story.
                 AnimatedVisibility(
-                    visible = showViewersSheet,
+                    visible = showViewersSheet && isOwnStory,
                     modifier = Modifier.align(Alignment.BottomCenter)
                 ) {
                     Surface(

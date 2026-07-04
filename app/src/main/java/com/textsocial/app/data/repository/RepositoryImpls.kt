@@ -9,6 +9,7 @@ import com.textsocial.app.domain.repository.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import okhttp3.*
+import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -284,12 +285,45 @@ class PostRepositoryImpl(
         }
 
         return try {
+            val myId = prefs.getUserId() ?: ""
             val body = com.textsocial.app.data.model.CreatePostRequest(
-                user_id = (prefs.getUserId() ?: ""),
+                user_id = myId,
                 content = text
             )
             val response = apiService.createPost(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to publish post: ${response.code()}"))
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("Failed to publish post: ${response.code()}"))
+            }
+
+            // Kirim notifikasi tipe "mention" ke setiap @username yang disebut di teks
+            // post, supaya orang yang di-mention tahu ada yang menyinggung mereka.
+            val createdPostId = response.body()?.firstOrNull()?.id
+            if (createdPostId != null) {
+                val mentionedUsernames = Regex("@([a-zA-Z0-9_]+)").findAll(text)
+                    .map { it.groupValues[1] }
+                    .distinct()
+                    .toList()
+                for (username in mentionedUsernames) {
+                    try {
+                        val profileResp = apiService.getProfilesByUsername("eq.$username")
+                        val mentionedUser = profileResp.body()?.firstOrNull()
+                        if (mentionedUser != null && mentionedUser.id != myId) {
+                            apiService.createNotification(
+                                com.textsocial.app.data.model.CreateNotificationRequest(
+                                    recipient_id = mentionedUser.id,
+                                    sender_id = myId,
+                                    type = "mention",
+                                    post_id = createdPostId
+                                )
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // Satu mention gagal notif tidak boleh menggagalkan post yang sudah berhasil dibuat
+                    }
+                }
+            }
+
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -331,8 +365,23 @@ class PostRepositoryImpl(
         return try {
             val response = apiService.getComments("eq.$postId")
             if (response.isSuccessful && response.body() != null) {
-                val comments = response.body()!!.map { dto ->
+                val dtos = response.body()!!
+                val myId = prefs.getUserId() ?: ""
+
+                // Ambil semua like untuk komentar-komentar di post ini sekaligus (bukan
+                // satu-satu per komentar) supaya tidak N+1 query yang berlebihan.
+                val commentIds = dtos.map { it.id }
+                val likesByComment: Map<String, List<CommentLikeDto>> = if (commentIds.isNotEmpty()) {
+                    val idsFilter = "in.(${commentIds.joinToString(",")})"
+                    val likesResponse = apiService.getCommentLikes(idsFilter)
+                    if (likesResponse.isSuccessful) {
+                        likesResponse.body()?.groupBy { it.comment_id } ?: emptyMap()
+                    } else emptyMap()
+                } else emptyMap()
+
+                val comments = dtos.map { dto ->
                     val commenterUsername = dto.users?.username ?: "user"
+                    val likesForComment = likesByComment[dto.id] ?: emptyList()
                     Comment(
                         id = dto.id,
                         postId = dto.post_id,
@@ -340,7 +389,10 @@ class PostRepositoryImpl(
                         username = commenterUsername,
                         text = dto.content,
                         createdAt = dto.created_at,
-                        avatarColor = getAvatarColor(commenterUsername)
+                        avatarColor = getAvatarColor(commenterUsername),
+                        parentId = dto.parent_id,
+                        likesCount = likesForComment.size,
+                        isLiked = likesForComment.any { it.user_id == myId }
                     )
                 }
                 Result.success(comments)
@@ -352,12 +404,13 @@ class PostRepositoryImpl(
         }
     }
 
-    override suspend fun createComment(postId: String, text: String): Result<Unit> {
+    override suspend fun createComment(postId: String, text: String, parentId: String?): Result<Unit> {
         return try {
             val body = com.textsocial.app.data.model.CreateCommentRequest(
                 post_id = postId,
                 user_id = (prefs.getUserId() ?: ""),
-                content = text
+                content = text,
+                parent_id = parentId
             )
             val response = apiService.createComment(body)
             if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to create comment: ${response.code()}"))
@@ -370,6 +423,29 @@ class PostRepositoryImpl(
         return try {
             val response = apiService.deleteComment("eq.$commentId")
             if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete comment: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun likeComment(commentId: String): Result<Unit> {
+        return try {
+            val body = com.textsocial.app.data.model.CreateCommentLikeRequest(
+                comment_id = commentId,
+                user_id = (prefs.getUserId() ?: "")
+            )
+            val response = apiService.likeComment(body)
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to like comment: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun unlikeComment(commentId: String): Result<Unit> {
+        return try {
+            val myId = prefs.getUserId() ?: ""
+            val response = apiService.unlikeComment(commentIdFilter = "eq.$commentId", userIdFilter = "eq.$myId")
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unlike comment: ${response.code()}"))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -394,6 +470,10 @@ class StoryRepositoryImpl(
                     } else emptyList()
 
                     val senderUsername = dto.users?.username ?: "user"
+                    // Jaring pengaman untuk data lama: pastikan username pemilik story sendiri
+                    // tidak pernah muncul di daftar viewer-nya sendiri, walau sempat kecatat
+                    // sebelum fix ini ada.
+                    val filteredViewers = viewerUsernames.filter { it != senderUsername }
                     Story(
                         id = dto.id,
                         userId = dto.user_id,
@@ -402,7 +482,7 @@ class StoryRepositoryImpl(
                         createdAt = dto.created_at,
                         expiresAt = dto.expires_at,
                         avatarColor = getAvatarColor(senderUsername),
-                        views = viewerUsernames
+                        views = filteredViewers
                     )
                 }
                 Result.success(stories)
@@ -476,17 +556,26 @@ class MessageRepositoryImpl(
 ) : MessageRepository {
 
     private val wsClient = OkHttpClient()
-    private var webSocket: WebSocket? = null
+    // Satu WebSocket per conversation (sebelumnya cuma 1 websocket global untuk semua chat,
+    // jadi kalau buka chat kedua, koneksi chat pertama ketimpa/rusak).
+    private val webSockets = ConcurrentHashMap<String, WebSocket>()
     private val conversationMessages = ConcurrentHashMap<String, List<Message>>()
     private val _messageFlows = ConcurrentHashMap<String, MutableStateFlow<List<Message>>>()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // PENTING: format ID ini HARUS sama persis dengan yang diharapkan trigger
+    // `handle_message_before_insert` di database (lihat README.md), yang mem-parsing
+    // conversation_id dengan `split_part(new.conversation_id, '_', 1/2)::uuid`.
+    // Trigger itu otomatis membuat baris di tabel `conversations` sebelum pesan pertama
+    // disimpan, jadi client TIDAK PERLU (dan TIDAK BOLEH) membuat row conversation sendiri
+    // lewat POST /conversations — kolom `id` di tabel itu bertipe text tanpa default,
+    // jadi insert tanpa id akan gagal (error 23502 "null value in column id").
     private fun getConversationId(userId1: String, userId2: String): String {
         return if (userId1 < userId2) "${userId1}_${userId2}" else "${userId2}_${userId1}"
     }
 
     private fun connectWebSocket(conversationId: String) {
-        if (webSocket != null) return
+        if (webSockets.containsKey(conversationId)) return
 
         val anonKey = SupabaseClient.SUPABASE_ANON_KEY
         val baseUrl = SupabaseClient.SUPABASE_URL
@@ -497,17 +586,39 @@ class MessageRepositoryImpl(
 
         val request = Request.Builder().url(wsEndpoint).build()
 
-        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
+        val newSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val joinMsg = "{\"topic\":\"realtime:public:messages:conversation_id=eq.$conversationId\",\"event\":\"phx_join\",\"payload\":{},\"ref\":\"1\"}"
+                // SEBELUMNYA: filter conversation_id ditaruh langsung di dalam nama topic
+                // ("realtime:public:messages:conversation_id=eq.XYZ"), format lama yang
+                // sudah tidak didukung server Supabase Realtime sekarang — jadi join ini
+                // sebenarnya selalu gagal secara diam-diam dan tidak pernah menerima update.
+                // SEKARANG: topic bebas (unik per percakapan), dan filter-nya ditaruh di
+                // payload.config.postgres_changes sesuai protokol yang berlaku saat ini.
+                val joinMsg = JSONObject().apply {
+                    put("topic", "realtime:messages:$conversationId")
+                    put("event", "phx_join")
+                    put("payload", JSONObject().apply {
+                        put("config", JSONObject().apply {
+                            put("postgres_changes", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("event", "*")
+                                    put("schema", "public")
+                                    put("table", "messages")
+                                    put("filter", "conversation_id=eq.$conversationId")
+                                })
+                            })
+                        })
+                    })
+                    put("ref", "1")
+                }.toString()
                 webSocket.send(joinMsg)
 
                 scope.launch {
                     var ref = 2
-                    while (this@MessageRepositoryImpl.webSocket != null) {
+                    while (webSockets[conversationId] != null) {
                         delay(25000)
                         try {
-                            this@MessageRepositoryImpl.webSocket?.send("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\"${ref++}\"}")
+                            webSockets[conversationId]?.send("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\"${ref++}\"}")
                         } catch (e: Exception) {
                             break
                         }
@@ -530,6 +641,7 @@ class MessageRepositoryImpl(
                             val textVal = record.getString("content")
                             val createdAt = record.getString("created_at")
                             val isRead = record.optBoolean("is_read", false)
+                            val isDeleted = record.optBoolean("is_deleted", false)
 
                             val newMessage = Message(
                                 id = id,
@@ -537,16 +649,22 @@ class MessageRepositoryImpl(
                                 senderId = senderId,
                                 text = textVal,
                                 createdAt = createdAt,
-                                isRead = isRead
+                                isRead = isRead,
+                                isDeleted = isDeleted
                             )
 
                             val flow = _messageFlows.getOrPut(convId) { MutableStateFlow(emptyList()) }
                             val currentList = conversationMessages[convId] ?: emptyList()
-                            if (currentList.none { it.id == newMessage.id }) {
-                                val updated = currentList + newMessage
-                                conversationMessages[convId] = updated
-                                flow.value = updated
+                            // Upsert: kalau pesan dengan id ini sudah ada (mis. dari optimistic
+                            // update di sendMessage), timpa datanya (misalnya saat pesan ditandai
+                            // dihapus via realtime UPDATE event); kalau belum ada, tambahkan baru.
+                            val updated = if (currentList.any { it.id == newMessage.id }) {
+                                currentList.map { if (it.id == newMessage.id) newMessage else it }
+                            } else {
+                                currentList + newMessage
                             }
+                            conversationMessages[convId] = updated
+                            flow.value = updated
                         }
                     }
                 } catch (e: Exception) {
@@ -555,7 +673,7 @@ class MessageRepositoryImpl(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                this@MessageRepositoryImpl.webSocket = null
+                webSockets.remove(conversationId)
                 scope.launch {
                     delay(5000)
                     connectWebSocket(conversationId)
@@ -564,9 +682,11 @@ class MessageRepositoryImpl(
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(1000, null)
-                this@MessageRepositoryImpl.webSocket = null
+                webSockets.remove(conversationId)
             }
         })
+
+        webSockets[conversationId] = newSocket
     }
 
     override suspend fun getConversations(): Result<List<Conversation>> {
@@ -603,8 +723,8 @@ class MessageRepositoryImpl(
 
     override suspend fun getMessages(otherUserId: String): Result<List<Message>> {
         val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
-        val conversationId = getConversationId(myId, otherUserId)
         return try {
+            val conversationId = getConversationId(myId, otherUserId)
             val response = apiService.getMessages("eq.$conversationId")
             if (response.isSuccessful && response.body() != null) {
                 val messages = response.body()!!.map { dto ->
@@ -614,7 +734,8 @@ class MessageRepositoryImpl(
                         senderId = dto.sender_id,
                         text = dto.content,
                         createdAt = dto.created_at,
-                        isRead = dto.is_read
+                        isRead = dto.is_read,
+                        isDeleted = dto.is_deleted
                     )
                 }
                 conversationMessages[conversationId] = messages
@@ -632,10 +753,50 @@ class MessageRepositoryImpl(
         }
     }
 
+    // Cache in-memory supaya tidak upsert conversation berulang-ulang untuk pasangan
+    // user yang sama pada sesi yang sama.
+    private val ensuredConversations = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    private suspend fun ensureConversationExists(conversationId: String, myId: String, otherUserId: String) {
+        if (ensuredConversations.contains(conversationId)) return
+        try {
+            val uid1: String
+            val uid2: String
+            if (myId < otherUserId) {
+                uid1 = myId; uid2 = otherUserId
+            } else {
+                uid1 = otherUserId; uid2 = myId
+            }
+            val response = apiService.upsertConversation(
+                com.textsocial.app.data.model.UpsertConversationRequest(
+                    id = conversationId,
+                    user1_id = uid1,
+                    user2_id = uid2
+                )
+            )
+            // 2xx sukses (dibuat atau sudah ada & di-ignore lewat "resolution=ignore-duplicates").
+            if (response.isSuccessful) {
+                ensuredConversations.add(conversationId)
+            }
+        } catch (_: Exception) {
+            // Kalau gagal (mis. offline), biarkan saja — percobaan insert pesan berikutnya
+            // akan tetap gagal dengan pesan error yang jelas, dan ensure akan dicoba lagi
+            // di panggilan berikutnya karena belum ditambahkan ke cache.
+        }
+    }
+
     override suspend fun sendMessage(otherUserId: String, text: String): Result<Unit> {
         val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
-        val conversationId = getConversationId(myId, otherUserId)
         return try {
+            // conversation_id dikirim dalam format "uuid1_uuid2" (diurutkan). SEBELUMNYA kode
+            // ini hanya mengandalkan trigger database untuk membuat baris `conversations`
+            // secara otomatis, tapi trigger itu ternyata tidak selalu aktif/ter-apply di semua
+            // project Supabase (menyebabkan error RLS 42501 "new row violates row-level
+            // security policy" saat insert pesan pertama). Sekarang klien memastikan sendiri
+            // baris conversation-nya ada (upsert) sebelum mengirim pesan.
+            val conversationId = getConversationId(myId, otherUserId)
+            ensureConversationExists(conversationId, myId, otherUserId)
+
             val body = com.textsocial.app.data.model.SendMessageRequest(
                 conversation_id = conversationId,
                 sender_id = myId,
@@ -643,6 +804,32 @@ class MessageRepositoryImpl(
             )
             val response = apiService.sendMessage(body)
             if (response.isSuccessful) {
+                // SEBELUMNYA: setelah kirim sukses, layar cuma diam menunggu WebSocket
+                // realtime mendorong balik pesannya — tapi format "join" WebSocket yang
+                // dipakai ternyata sudah tidak cocok dengan protokol Supabase Realtime
+                // yang sekarang, jadi update itu tidak pernah datang, dan pesan baru
+                // muncul kalau chat ditutup-buka lagi (karena getMessages() fetch ulang).
+                // SEKARANG: begitu server konfirmasi pesan tersimpan, langsung tambahkan
+                // ke layar (optimistic update) tanpa menunggu realtime sama sekali.
+                val createdDto = response.body()?.firstOrNull()
+                if (createdDto != null) {
+                    val newMessage = Message(
+                        id = createdDto.id,
+                        conversationId = createdDto.conversation_id,
+                        senderId = createdDto.sender_id,
+                        text = createdDto.content,
+                        createdAt = createdDto.created_at,
+                        isRead = createdDto.is_read,
+                        isDeleted = createdDto.is_deleted
+                    )
+                    val flow = _messageFlows.getOrPut(conversationId) { MutableStateFlow(emptyList()) }
+                    val currentList = conversationMessages[conversationId] ?: emptyList()
+                    if (currentList.none { it.id == newMessage.id }) {
+                        val updated = currentList + newMessage
+                        conversationMessages[conversationId] = updated
+                        flow.value = updated
+                    }
+                }
                 Result.success(Unit)
             } else {
                 Result.failure(Exception("Failed to send message via API: ${response.code()}"))
@@ -654,13 +841,36 @@ class MessageRepositoryImpl(
 
     override suspend fun markMessagesAsRead(otherUserId: String): Result<Unit> {
         val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
-        val conversationId = getConversationId(myId, otherUserId)
         return try {
+            val conversationId = getConversationId(myId, otherUserId)
             val response = apiService.markMessagesAsRead(
                 conversationFilter = "eq.$conversationId",
                 senderFilter = "neq.$myId"
             )
             if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to mark as read: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteMessageForEveryone(otherUserId: String, messageId: String): Result<Unit> {
+        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        return try {
+            val conversationId = getConversationId(myId, otherUserId)
+            val response = apiService.deleteMessageForEveryone(idFilter = "eq.$messageId")
+            if (response.isSuccessful) {
+                // Update lokal langsung supaya layar berubah seketika, tidak perlu nunggu realtime.
+                val flow = _messageFlows.getOrPut(conversationId) { MutableStateFlow(emptyList()) }
+                val currentList = conversationMessages[conversationId] ?: emptyList()
+                val updated = currentList.map {
+                    if (it.id == messageId) it.copy(text = "Pesan ini telah dihapus", isDeleted = true) else it
+                }
+                conversationMessages[conversationId] = updated
+                flow.value = updated
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to delete message: ${response.code()}"))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -796,6 +1006,40 @@ class UserRepositoryImpl(
         }
     }
 
+    // Dipakai sebagai daftar "akun terdekat" default untuk autocomplete mention
+    // ketika user baru ketik "@" tanpa query apa pun (belum ada huruf sesudahnya).
+    override suspend fun getFollowingUsers(): Result<List<User>> {
+        return try {
+            val myId = prefs.getUserId() ?: return Result.success(emptyList())
+            val followingResponse = apiService.getFollowing("eq.$myId")
+            if (!followingResponse.isSuccessful) {
+                return Result.failure(Exception("Failed to load following: ${followingResponse.code()}"))
+            }
+            val followingIds = followingResponse.body()?.map { it.following_id } ?: emptyList()
+            val users = followingIds.mapNotNull { id ->
+                try {
+                    val profileResp = apiService.getProfile("eq.$id")
+                    profileResp.body()?.firstOrNull()?.let { p ->
+                        User(
+                            id = p.id,
+                            username = p.username,
+                            email = p.email ?: "",
+                            displayName = p.display_name,
+                            bio = p.bio,
+                            avatarColor = getAvatarColor(p.username),
+                            isPrivate = p.is_private
+                        )
+                    }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            Result.success(users)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun searchUsers(query: String): Result<List<User>> {
         if (query.isBlank()) return Result.success(emptyList())
         return try {
@@ -833,13 +1077,16 @@ class UserRepositoryImpl(
                         "like" -> "liked your post"
                         "comment" -> "commented on your post"
                         "follow" -> "started following you"
+                        "mention" -> "mentioned you in a post"
                         else -> "sent you a notification"
                     }
                     Notification(
                         id = dto.id,
                         type = dto.type,
+                        senderId = dto.sender_id,
                         senderUsername = senderUsername,
                         senderAvatarColor = senderAvatarColor,
+                        postId = dto.post_id,
                         text = typeText,
                         createdAt = dto.created_at
                     )

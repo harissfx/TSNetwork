@@ -20,8 +20,10 @@ interface PostRepository {
     suspend fun likePost(postId: String): Result<Unit>
     suspend fun unlikePost(postId: String): Result<Unit>
     suspend fun getComments(postId: String): Result<List<Comment>>
-    suspend fun createComment(postId: String, text: String): Result<Unit>
+    suspend fun createComment(postId: String, text: String, parentId: String? = null): Result<Unit>
     suspend fun deleteComment(commentId: String): Result<Unit>
+    suspend fun likeComment(commentId: String): Result<Unit>
+    suspend fun unlikeComment(commentId: String): Result<Unit>
 }
 
 interface StoryRepository {
@@ -37,6 +39,7 @@ interface MessageRepository {
     suspend fun getMessages(otherUserId: String): Result<List<Message>>
     suspend fun sendMessage(otherUserId: String, text: String): Result<Unit>
     suspend fun markMessagesAsRead(otherUserId: String): Result<Unit>
+    suspend fun deleteMessageForEveryone(otherUserId: String, messageId: String): Result<Unit>
     fun observeMessages(otherUserId: String): Flow<List<Message>>
 }
 
@@ -48,6 +51,7 @@ interface UserRepository {
     suspend fun unfollowUser(targetUserId: String): Result<Unit>
     suspend fun isFollowing(targetUserId: String): Result<Boolean>
     suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>> // (followersCount, followingCount)
+    suspend fun getFollowingUsers(): Result<List<User>>
     suspend fun searchUsers(query: String): Result<List<User>>
     suspend fun getNotifications(): Result<List<Notification>>
     suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>>

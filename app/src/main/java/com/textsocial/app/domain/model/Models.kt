@@ -46,7 +46,10 @@ data class Comment(
     val username: String,
     val text: String,
     val createdAt: String,
-    val avatarColor: String
+    val avatarColor: String,
+    val parentId: String? = null,
+    val likesCount: Int = 0,
+    val isLiked: Boolean = false
 ) : Serializable
 
 data class Message(
@@ -55,7 +58,8 @@ data class Message(
     val senderId: String,
     val text: String,
     val createdAt: String,
-    val isRead: Boolean
+    val isRead: Boolean,
+    val isDeleted: Boolean = false
 ) : Serializable
 
 data class Conversation(
@@ -70,8 +74,10 @@ data class Conversation(
 data class Notification(
     val id: String,
     val type: String, // "like", "comment", "follow", "mention" (lowercase, matches SQL schema)
+    val senderId: String,
     val senderUsername: String,
     val senderAvatarColor: String,
+    val postId: String?,
     val text: String,
     val createdAt: String
 ) : Serializable

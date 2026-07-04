@@ -111,7 +111,8 @@ data class MessageDto(
     val conversation_id: String,
     val content: String,
     val created_at: String,
-    val is_read: Boolean = false
+    val is_read: Boolean = false,
+    val is_deleted: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -182,7 +183,22 @@ data class LikePostRequest(
 data class CreateCommentRequest(
     val post_id: String,
     val user_id: String,
-    val content: String
+    val content: String,
+    val parent_id: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CommentLikeDto(
+    val id: String,
+    val comment_id: String,
+    val user_id: String,
+    val created_at: String
+)
+
+@JsonClass(generateAdapter = true)
+data class CreateCommentLikeRequest(
+    val comment_id: String,
+    val user_id: String
 )
 
 @JsonClass(generateAdapter = true)
@@ -211,9 +227,27 @@ data class SendMessageRequest(
     val content: String
 )
 
+// Dipakai untuk memastikan baris `conversations` ada sebelum mengirim pesan pertama.
+// id harus dalam format "uuid_kecil_uuid_besar" (sama seperti yang dipakai di conversation_id
+// pesan), sesuai skema tabel `conversations` (id text primary key, tanpa default).
+@JsonClass(generateAdapter = true)
+data class UpsertConversationRequest(
+    val id: String,
+    val user1_id: String,
+    val user2_id: String
+)
+
 @JsonClass(generateAdapter = true)
 data class MarkAsReadRequest(
     val is_read: Boolean = true
+)
+
+// Dipakai untuk "hapus untuk semua orang": kontennya diganti placeholder & ditandai
+// is_deleted=true, jadi tetap ada jejak baris pesannya (bukan dihapus total dari DB).
+@JsonClass(generateAdapter = true)
+data class DeleteMessageRequest(
+    val is_deleted: Boolean = true,
+    val content: String = "Pesan ini telah dihapus"
 )
 
 @JsonClass(generateAdapter = true)

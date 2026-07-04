@@ -286,6 +286,11 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     private val _commentText = MutableStateFlow("")
     val commentText = _commentText.asStateFlow()
 
+    // Fix #1: state untuk "membalas komentar X" — kalau tidak null, comment baru yang
+    // dikirim akan jadi balasan (reply) dari komentar ini, bukan komentar baru di root.
+    private val _replyingTo = MutableStateFlow<Comment?>(null)
+    val replyingTo = _replyingTo.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -316,15 +321,25 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         _commentText.value = value
     }
 
+    fun startReplyTo(comment: Comment) {
+        _replyingTo.value = comment
+    }
+
+    fun cancelReply() {
+        _replyingTo.value = null
+    }
+
     fun addComment() {
         val currentPost = _post.value ?: return
         val text = _commentText.value
         if (text.isBlank()) return
+        val parentId = _replyingTo.value?.id
 
         viewModelScope.launch(Dispatchers.IO) {
-            val result = postRepo.createComment(currentPost.id, text)
+            val result = postRepo.createComment(currentPost.id, text, parentId)
             if (result.isSuccess) {
                 _commentText.value = ""
+                _replyingTo.value = null
                 // Refresh comments
                 val commentsResult = postRepo.getComments(currentPost.id)
                 if (commentsResult.isSuccess) {
@@ -336,12 +351,38 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         }
     }
 
+    fun toggleCommentLike(comment: Comment) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (comment.isLiked) {
+                postRepo.unlikeComment(comment.id)
+                _comments.update { current ->
+                    current.map {
+                        if (it.id == comment.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
+                        else it
+                    }
+                }
+            } else {
+                postRepo.likeComment(comment.id)
+                _comments.update { current ->
+                    current.map {
+                        if (it.id == comment.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
+                        else it
+                    }
+                }
+            }
+        }
+    }
+
     fun deleteComment(commentId: String) {
         val currentPost = _post.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deleteComment(commentId)
             if (result.isSuccess) {
-                _comments.update { current -> current.filter { it.id != commentId } }
+                // Hapus komentar itu sendiri sekaligus semua balasannya di layar
+                // (di database sudah "on delete cascade", supaya UI konsisten).
+                _comments.update { current ->
+                    current.filter { it.id != commentId && it.parentId != commentId }
+                }
                 _post.update { it?.copy(commentsCount = (it.commentsCount - 1).coerceAtLeast(0)) }
             }
         }
@@ -351,6 +392,7 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
 // 7. STORY VIEWMODEL
 class StoryViewModel : ViewModel() {
     private val storyRepo = ServiceLocator.storyRepository
+    private val userRepo = ServiceLocator.userRepository
 
     private val _stories = MutableStateFlow<List<Story>>(emptyList())
     val stories = _stories.asStateFlow()
@@ -379,7 +421,25 @@ class StoryViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             val result = storyRepo.getStories()
-            _stories.value = result.getOrDefault(emptyList())
+            val rawStories = result.getOrDefault(emptyList())
+
+            // BUG SEBELUMNYA: semua story dari SEMUA user ditampilkan, padahal seharusnya
+            // hanya story milik sendiri + story dari user yang sudah kita follow.
+            val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
+            val followingIds = userRepo.getFollowingUsers().getOrDefault(emptyList()).map { it.id }.toSet()
+            val visibleStories = rawStories.filter { it.userId == myId || followingIds.contains(it.userId) }
+
+            // Kelompokkan story per user supaya user yang punya beberapa story
+            // tampil sebagai SATU bubble (kayak Instagram), bukan beberapa bubble
+            // terpisah. Di dalam satu user, urutkan dari yang paling lama ke
+            // terbaru; antar user, yang paling baru posting story ditaruh duluan.
+            val grouped = visibleStories
+                .groupBy { it.userId }
+                .values
+                .map { userStories -> userStories.sortedBy { it.createdAt } }
+                .sortedByDescending { userGroup -> userGroup.maxOf { it.createdAt } }
+                .flatten()
+            _stories.value = grouped
             _isLoading.value = false
         }
     }
@@ -411,7 +471,12 @@ class StoryViewModel : ViewModel() {
         }
     }
 
-    fun markStoryAsViewed(storyId: String) {
+    // BUG SEBELUMNYA: fungsi ini dipanggil untuk SEMUA story yang dibuka, termasuk story
+    // milik sendiri, jadi nama/akun sendiri ikut tercatat sebagai "viewer" story sendiri.
+    // Sekarang skip pencatatan kalau story yang dibuka adalah story sendiri.
+    fun markStoryAsViewed(storyId: String, storyOwnerId: String) {
+        val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
+        if (myId != null && myId == storyOwnerId) return
         viewModelScope.launch(Dispatchers.IO) {
             storyRepo.recordStoryView(storyId)
             loadStories()
@@ -462,11 +527,22 @@ class DMChatViewModel : ViewModel() {
     private val _messageText = MutableStateFlow("")
     val messageText = _messageText.asStateFlow()
 
+    private val _sendError = MutableStateFlow<String?>(null)
+    val sendError = _sendError.asStateFlow()
+
     private var targetUserId: String = ""
 
     fun initChat(otherUserId: String) {
         targetUserId = otherUserId
         viewModelScope.launch(Dispatchers.IO) {
+            // SEBELUMNYA: histori pesan lama tidak pernah dimuat di sini, hanya
+            // observeMessages() yang menunggu update realtime lewat WebSocket. Jadi
+            // begitu chat dibuka, layar terlihat kosong sampai ada pesan baru masuk.
+            val result = msgRepo.getMessages(targetUserId)
+            if (result.isSuccess) {
+                _messages.value = result.getOrDefault(emptyList())
+            }
+
             // Mark read
             msgRepo.markMessagesAsRead(targetUserId)
 
@@ -479,15 +555,36 @@ class DMChatViewModel : ViewModel() {
 
     fun onMessageTextChange(value: String) {
         _messageText.value = value
+        if (value.isNotBlank()) _sendError.value = null
     }
 
     fun sendMessage() {
         val text = _messageText.value
         if (text.isBlank() || targetUserId.isEmpty()) return
         _messageText.value = ""
+        _sendError.value = null
 
         viewModelScope.launch(Dispatchers.IO) {
-            msgRepo.sendMessage(targetUserId, text)
+            val result = msgRepo.sendMessage(targetUserId, text)
+            if (result.isFailure) {
+                // Sebelumnya kegagalan ini didiamkan total: teks sudah terlanjur
+                // dikosongkan dan tidak ada bubble/pesan error apa pun yang muncul,
+                // jadi kelihatan seperti "halaman chat kosong". Sekarang teks yang
+                // gagal terkirim dikembalikan ke kolom input, dan errornya ditampilkan.
+                _messageText.value = text
+                _sendError.value = "Pesan gagal terkirim. Coba lagi."
+            }
+        }
+    }
+
+    fun dismissSendError() {
+        _sendError.value = null
+    }
+
+    fun deleteMessage(messageId: String) {
+        if (targetUserId.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            msgRepo.deleteMessageForEveryone(targetUserId, messageId)
         }
     }
 }
@@ -623,9 +720,37 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
             // Load user's own posts
             val postsResult = postRepo.getPosts()
             if (postsResult.isSuccess) {
-                _posts.value = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
+                val userPosts = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
+                _posts.value = userPosts
+                // BUG SEBELUMNYA: profile.postsCount tidak pernah dihitung dari data asli,
+                // jadi selalu menampilkan 0 di layar Profile walau user sudah punya postingan.
+                _user.update { it?.copy(postsCount = userPosts.size) }
             }
             _isLoading.value = false
+        }
+    }
+
+    fun toggleLike(post: Post) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (post.isLiked) {
+                postRepo.unlikePost(post.id)
+                _posts.update { current ->
+                    current.map {
+                        if (it.id == post.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
+                        else it
+                    }
+                }
+            } else {
+                postRepo.likePost(post.id)
+                _posts.update { current ->
+                    current.map {
+                        if (it.id == post.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
+                        else it
+                    }
+                }
+            }
+            // Sinkronkan juga ke feed Home supaya status like konsisten di kedua layar.
+            homeViewModel.loadPosts()
         }
     }
 

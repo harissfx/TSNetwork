@@ -48,8 +48,7 @@ fun HomeScreen(
     onNavigateToCreateStory: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToDMs: () -> Unit,
-    onNavigateToNotifications: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToNotifications: () -> Unit
 ) {
     val posts by homeViewModel.posts.collectAsState()
     val isLoading by homeViewModel.isLoading.collectAsState()
@@ -92,9 +91,6 @@ fun HomeScreen(
                     }
                     IconButton(onClick = onNavigateToDMs) {
                         Icon(Icons.Default.MailOutline, contentDescription = "Messages")
-                    }
-                    IconButton(onClick = onNavigateToSettings, modifier = Modifier.testTag("settings_button")) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -158,30 +154,58 @@ fun HomeScreen(
                             }
                         }
 
+                        // `stories` sudah dikelompokkan per user (lihat StoryViewModel.loadStories),
+                        // jadi di sini kita cukup ambil satu entri representatif per user supaya
+                        // tiap user hanya tampil sebagai SATU bubble, walau dia punya beberapa story.
+                        val storyBubbleUsers = remember(stories) { stories.distinctBy { it.userId } }
+
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            itemsIndexed(stories) { index, story ->
+                            items(storyBubbleUsers) { story ->
+                                val storyCountForUser = stories.count { it.userId == story.userId }
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
                                         .clickable {
-                                            storyViewModel.setSelectedStoryIndex(index)
+                                            // Mulai dari story PALING LAMA milik user ini (index pertama
+                                            // dalam grup), supaya urutan tontonannya kronologis seperti IG.
+                                            val firstIndexForUser = stories.indexOfFirst { it.userId == story.userId }
+                                            storyViewModel.setSelectedStoryIndex(firstIndexForUser)
                                             onNavigateToStories()
                                         }
                                         .padding(vertical = 4.dp)
                                 ) {
-                                    UserAvatarComponent(
-                                        username = story.username,
-                                        avatarColor = story.avatarColor,
-                                        size = AvatarSize.MEDIUM,
-                                        modifier = Modifier.background(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                    Box {
+                                        UserAvatarComponent(
+                                            username = story.username,
+                                            avatarColor = story.avatarColor,
+                                            size = AvatarSize.MEDIUM,
+                                            modifier = Modifier.background(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = androidx.compose.foundation.shape.CircleShape
+                                            )
                                         )
-                                    )
+                                        if (storyCountForUser > 1) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.primary,
+                                                shape = androidx.compose.foundation.shape.CircleShape,
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .size(16.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        text = storyCountForUser.toString(),
+                                                        fontSize = 9.sp,
+                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = story.username,

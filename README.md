@@ -85,9 +85,18 @@ create table public.comments (
     id uuid default uuid_generate_v4() primary key,
     post_id uuid references public.posts(id) on delete cascade not null,
     user_id uuid references public.profiles(id) on delete cascade not null,
-    parent_id uuid references public.comments(id) on delete cascade,
+    parent_id uuid references public.comments(id) on delete cascade, -- diisi kalau komentar ini adalah balasan (reply) dari komentar lain
     content text not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 5B. TABEL LIKE KOMENTAR (COMMENT_LIKES)
+create table public.comment_likes (
+    id uuid default uuid_generate_v4() primary key,
+    comment_id uuid references public.comments(id) on delete cascade not null,
+    user_id uuid references public.profiles(id) on delete cascade not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    unique(comment_id, user_id)
 );
 
 -- 6. TABEL LIKES (LIKES)
@@ -125,6 +134,7 @@ create table public.messages (
     sender_id uuid references public.profiles(id) on delete cascade not null,
     content text not null,
     is_read boolean default false not null,
+    is_deleted boolean default false not null, -- fitur "hapus pesan untuk semua orang": bukan dihapus beneran, cuma ditandai + kontennya diganti placeholder
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -147,6 +157,7 @@ create index idx_messages_conversation_id on public.messages(conversation_id);
 create index idx_stories_expires_at on public.stories(expires_at);
 create index idx_likes_post_id on public.likes(post_id);
 create index idx_comments_post_id on public.comments(post_id);
+create index idx_comment_likes_comment_id on public.comment_likes(comment_id);
 create index idx_notifications_recipient_id on public.notifications(recipient_id);
 
 
@@ -329,6 +340,7 @@ alter table public.posts enable row level security;
 alter table public.stories enable row level security;
 alter table public.story_views enable row level security;
 alter table public.comments enable row level security;
+alter table public.comment_likes enable row level security;
 alter table public.likes enable row level security;
 alter table public.follows enable row level security;
 alter table public.conversations enable row level security;
@@ -357,6 +369,11 @@ create policy "Allow authenticated insertion of story views" on public.story_vie
 create policy "Allow public reading of comments" on public.comments for select using (true);
 create policy "Allow authenticated creation of comments" on public.comments for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of comments" on public.comments for delete using (auth.uid() = user_id);
+
+-- LIKE KOMENTAR: Semua orang bisa membaca; hanya pemilik like yang bisa membuat/menghapus like miliknya sendiri
+create policy "Allow public reading of comment likes" on public.comment_likes for select using (true);
+create policy "Allow authenticated creation of comment likes" on public.comment_likes for insert with check (auth.uid() = user_id);
+create policy "Allow owner deletion of comment likes" on public.comment_likes for delete using (auth.uid() = user_id);
 
 -- LIKES: Semua orang bisa membaca likes; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
 create policy "Allow public reading of likes" on public.likes for select using (true);
