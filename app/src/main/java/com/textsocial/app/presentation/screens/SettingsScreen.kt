@@ -28,6 +28,25 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     var isPrivateAccount by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
+    var currentDisplayName by remember { mutableStateOf<String?>(null) }
+    var currentBio by remember { mutableStateOf<String?>(null) }
+    var isLoadingProfile by remember { mutableStateOf(true) }
+
+    // Ambil status privasi (dan field lain) yang sebenarnya dari server setiap kali
+    // layar ini dibuka, supaya switch menampilkan nilai yang benar-benar tersimpan,
+    // bukan selalu mulai dari false.
+    LaunchedEffect(Unit) {
+        val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
+        if (myId != null) {
+            val result = ServiceLocator.userRepository.getProfile(myId)
+            result.onSuccess { user ->
+                isPrivateAccount = user.isPrivate
+                currentDisplayName = user.displayName
+                currentBio = user.bio
+            }
+        }
+        isLoadingProfile = false
+    }
 
     Scaffold(
         topBar = {
@@ -90,7 +109,22 @@ fun SettingsScreen(
                             }
                             Switch(
                                 checked = isPrivateAccount,
-                                onCheckedChange = { isPrivateAccount = it }
+                                enabled = !isLoadingProfile,
+                                onCheckedChange = { newValue ->
+                                    val previousValue = isPrivateAccount
+                                    isPrivateAccount = newValue // update UI langsung (optimistic)
+                                    coroutineScope.launch {
+                                        val result = ServiceLocator.userRepository.updateProfile(
+                                            displayName = currentDisplayName,
+                                            bio = currentBio,
+                                            isPrivate = newValue
+                                        )
+                                        // Kalau gagal simpan ke server, kembalikan switch ke nilai semula
+                                        result.onFailure {
+                                            isPrivateAccount = previousValue
+                                        }
+                                    }
+                                }
                             )
                         }
 

@@ -769,6 +769,33 @@ class UserRepositoryImpl(
         }
     }
 
+    override suspend fun isFollowing(targetUserId: String): Result<Boolean> {
+        return try {
+            val myId = prefs.getUserId() ?: return Result.success(false)
+            val response = apiService.getFollowers("eq.$targetUserId")
+            if (response.isSuccessful) {
+                val followingNow = response.body()?.any { it.follower_id == myId } ?: false
+                Result.success(followingNow)
+            } else {
+                Result.failure(Exception("Failed to check follow status: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>> {
+        return try {
+            val followersResponse = apiService.getFollowers("eq.$userId")
+            val followingResponse = apiService.getFollowing("eq.$userId")
+            val followersCount = followersResponse.body()?.size ?: 0
+            val followingCount = followingResponse.body()?.size ?: 0
+            Result.success(followersCount to followingCount)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun searchUsers(query: String): Result<List<User>> {
         if (query.isBlank()) return Result.success(emptyList())
         return try {

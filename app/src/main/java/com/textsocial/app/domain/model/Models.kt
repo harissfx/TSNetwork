@@ -69,7 +69,7 @@ data class Conversation(
 
 data class Notification(
     val id: String,
-    val type: String, // "LIKE", "COMMENT", "FOLLOW", "MENTION"
+    val type: String, // "like", "comment", "follow", "mention" (lowercase, matches SQL schema)
     val senderUsername: String,
     val senderAvatarColor: String,
     val text: String,

@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,6 +26,11 @@ fun CreateStoryScreen(
     viewModel: StoryViewModel,
     onNavigateBack: () -> Unit
 ) {
+    // Reset harus terjadi SEBELUM collectAsState membaca nilai isFinished, supaya
+    // sisa nilai true dari sesi sebelumnya tidak sempat memicu onNavigateBack() lagi
+    // di composisi pertama layar ini.
+    remember(Unit) { viewModel.resetComposerState() }
+
     val text by viewModel.storyText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isFinished by viewModel.isFinished.collectAsState()

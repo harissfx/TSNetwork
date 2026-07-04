@@ -46,6 +46,8 @@ interface UserRepository {
     suspend fun updateProfile(displayName: String?, bio: String?, isPrivate: Boolean): Result<Unit>
     suspend fun followUser(targetUserId: String): Result<Unit>
     suspend fun unfollowUser(targetUserId: String): Result<Unit>
+    suspend fun isFollowing(targetUserId: String): Result<Boolean>
+    suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>> // (followersCount, followingCount)
     suspend fun searchUsers(query: String): Result<List<User>>
     suspend fun getNotifications(): Result<List<Notification>>
     suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>>

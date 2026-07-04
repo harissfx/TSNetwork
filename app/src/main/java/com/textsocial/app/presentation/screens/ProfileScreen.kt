@@ -43,6 +43,8 @@ fun ProfileScreen(
     val user by viewModel.user.collectAsState()
     val posts by viewModel.posts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isFollowing by viewModel.isFollowing.collectAsState()
+    val isFollowActionLoading by viewModel.isFollowActionLoading.collectAsState()
     val currentUserId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "" }
 
     LaunchedEffect(userId) {
@@ -192,12 +194,24 @@ fun ProfileScreen(
                                         modifier = Modifier.fillMaxWidth(0.8f),
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Button(
-                                            onClick = { /* Follow click */ },
-                                            modifier = Modifier.weight(1f),
-                                            shape = MaterialTheme.shapes.medium
-                                        ) {
-                                            Text("Follow")
+                                        if (isFollowing) {
+                                            OutlinedButton(
+                                                onClick = { viewModel.toggleFollow() },
+                                                enabled = !isFollowActionLoading,
+                                                modifier = Modifier.weight(1f),
+                                                shape = MaterialTheme.shapes.medium
+                                            ) {
+                                                Text("Following")
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { viewModel.toggleFollow() },
+                                                enabled = !isFollowActionLoading,
+                                                modifier = Modifier.weight(1f),
+                                                shape = MaterialTheme.shapes.medium
+                                            ) {
+                                                Text("Follow")
+                                            }
                                         }
 
                                         OutlinedButton(

@@ -25,6 +25,7 @@ import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.LinkTextComponent
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.PostDetailViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +39,7 @@ fun PostDetailScreen(
     val comments by viewModel.comments.collectAsState()
     val commentText by viewModel.commentText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(postId) {
         viewModel.setPost(postId)
@@ -152,7 +154,13 @@ fun PostDetailScreen(
                                     style = MaterialTheme.typography.bodyLarge.copy(
                                         fontSize = 18.sp,
                                         lineHeight = 26.sp
-                                    )
+                                    ),
+                                    onMentionClick = { username ->
+                                        coroutineScope.launch {
+                                            val result = com.textsocial.app.di.ServiceLocator.userRepository.getProfileByUsername(username)
+                                            result.onSuccess { mentionedUser -> onNavigateToProfile(mentionedUser.id) }
+                                        }
+                                    }
                                 )
 
                                 Spacer(modifier = Modifier.height(16.dp))

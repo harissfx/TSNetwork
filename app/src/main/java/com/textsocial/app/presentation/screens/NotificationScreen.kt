@@ -103,15 +103,15 @@ fun NotificationScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     val alertIcon = when (alert.type) {
-                                        "LIKE" -> Icons.Default.Favorite
-                                        "COMMENT" -> Icons.Default.ChatBubble
-                                        "FOLLOW" -> Icons.Default.PersonAdd
+                                        "like" -> Icons.Default.Favorite
+                                        "comment" -> Icons.Default.ChatBubble
+                                        "follow" -> Icons.Default.PersonAdd
                                         else -> Icons.Default.AlternateEmail
                                     }
                                     val iconColor = when (alert.type) {
-                                        "LIKE" -> Color.Red
-                                        "COMMENT" -> MaterialTheme.colorScheme.primary
-                                        "FOLLOW" -> MaterialTheme.colorScheme.secondary
+                                        "like" -> Color.Red
+                                        "comment" -> MaterialTheme.colorScheme.primary
+                                        "follow" -> MaterialTheme.colorScheme.secondary
                                         else -> MaterialTheme.colorScheme.tertiary
                                     }
 

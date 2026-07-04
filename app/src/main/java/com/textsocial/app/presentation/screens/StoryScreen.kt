@@ -37,8 +37,12 @@ fun StoryScreen(
     var progress by remember { mutableStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
 
-    // Auto advancing progress bar simulating active timer
-    LaunchedEffect(currentStoryIndex, stories) {
+    // Kunci efek ini ke currentStoryIndex & jumlah story saja (bukan seluruh isi `stories`),
+    // supaya efek TIDAK restart ketika markStoryAsViewed() memicu reload data dan
+    // menambah 1 viewer ke story yang sedang ditonton (yang mengubah isi list `stories`
+    // walau jumlahnya tetap sama). Restart yang tidak disengaja itu menyebabkan progress
+    // bar reset ke 0 dan markStoryAsViewed() terpanggil dua kali untuk story yang sama.
+    LaunchedEffect(currentStoryIndex, stories.size) {
         if (stories.isNotEmpty() && currentStoryIndex < stories.size) {
             val activeStory = stories[currentStoryIndex]
             viewModel.markStoryAsViewed(activeStory.id)

@@ -390,6 +390,14 @@ class StoryViewModel : ViewModel() {
         }
     }
 
+    // Dipanggil setiap kali layar "Buat Story" dibuka, supaya sisa state dari sesi
+    // sebelumnya (misal isFinished = true dari story terakhir yang berhasil dibuat)
+    // tidak membuat layar langsung ke-pop lagi sebelum sempat dipakai.
+    fun resetComposerState() {
+        _storyText.value = ""
+        _isFinished.value = false
+    }
+
     fun createStory() {
         if (_storyText.value.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -574,6 +582,12 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val _displayNameText = MutableStateFlow("")
     val displayNameText = _displayNameText.asStateFlow()
 
+    private val _isFollowing = MutableStateFlow(false)
+    val isFollowing = _isFollowing.asStateFlow()
+
+    private val _isFollowActionLoading = MutableStateFlow(false)
+    val isFollowActionLoading = _isFollowActionLoading.asStateFlow()
+
     fun loadProfile(userId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
@@ -582,11 +596,28 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
             // so we must use profile.id (not the raw userId param) when matching posts below.
             var resolvedUserId = userId
             if (userResult.isSuccess) {
-                val profile = userResult.getOrNull()
+                var profile = userResult.getOrNull()
+                resolvedUserId = profile?.id ?: userId
+
+                // Ambil jumlah followers/following yang sebenarnya dari tabel follows
+                val countsResult = userRepo.getFollowCounts(resolvedUserId)
+                if (countsResult.isSuccess) {
+                    val (followers, following) = countsResult.getOrDefault(0 to 0)
+                    profile = profile?.copy(followersCount = followers, followingCount = following)
+                }
+
                 _user.value = profile
                 _bioText.value = profile?.bio ?: ""
                 _displayNameText.value = profile?.displayName ?: ""
-                resolvedUserId = profile?.id ?: userId
+
+                // Cek apakah user saat ini sudah follow profil ini (skip untuk profil sendiri)
+                val myId = com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId()
+                if (myId != null && resolvedUserId != myId) {
+                    val followingResult = userRepo.isFollowing(resolvedUserId)
+                    _isFollowing.value = followingResult.getOrDefault(false)
+                } else {
+                    _isFollowing.value = false
+                }
             }
 
             // Load user's own posts
@@ -595,6 +626,26 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
                 _posts.value = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
             }
             _isLoading.value = false
+        }
+    }
+
+    fun toggleFollow() {
+        val profile = _user.value ?: return
+        if (_isFollowActionLoading.value) return
+        val wasFollowing = _isFollowing.value
+        viewModelScope.launch(Dispatchers.IO) {
+            _isFollowActionLoading.value = true
+            val result = if (wasFollowing) {
+                userRepo.unfollowUser(profile.id)
+            } else {
+                userRepo.followUser(profile.id)
+            }
+            if (result.isSuccess) {
+                _isFollowing.value = !wasFollowing
+                val delta = if (wasFollowing) -1 else 1
+                _user.update { it?.copy(followersCount = (it.followersCount + delta).coerceAtLeast(0)) }
+            }
+            _isFollowActionLoading.value = false
         }
     }
 

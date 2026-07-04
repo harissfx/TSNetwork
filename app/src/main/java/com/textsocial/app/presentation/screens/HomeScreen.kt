@@ -34,6 +34,7 @@ import com.textsocial.app.presentation.components.LinkTextComponent
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.HomeViewModel
 import com.textsocial.app.presentation.viewmodel.StoryViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,6 +55,7 @@ fun HomeScreen(
     val isLoading by homeViewModel.isLoading.collectAsState()
     val activeHashtag by homeViewModel.activeHashtag.collectAsState()
     val stories by storyViewModel.stories.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -242,6 +244,12 @@ fun HomeScreen(
                             onPostClick = { onNavigateToPostDetail(post.id) },
                             onUserClick = { onNavigateToProfile(post.userId) },
                             onHashtagClick = { hashtag -> homeViewModel.loadPosts(hashtag) },
+                            onMentionClick = { username ->
+                                coroutineScope.launch {
+                                    val result = com.textsocial.app.di.ServiceLocator.userRepository.getProfileByUsername(username)
+                                    result.onSuccess { mentionedUser -> onNavigateToProfile(mentionedUser.id) }
+                                }
+                            },
                             onDeleteClick = { homeViewModel.deletePost(post.id) }
                         )
                     }
@@ -258,6 +266,7 @@ fun PostItem(
     onPostClick: () -> Unit,
     onUserClick: () -> Unit,
     onHashtagClick: (String) -> Unit,
+    onMentionClick: (String) -> Unit = {},
     onDeleteClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -328,7 +337,7 @@ fun PostItem(
                     lineHeight = 21.sp
                 ),
                 onHashtagClick = onHashtagClick,
-                onMentionClick = { username -> }
+                onMentionClick = onMentionClick
             )
 
             Spacer(modifier = Modifier.height(16.dp))
