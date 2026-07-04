@@ -18,6 +18,7 @@ fun AppNavGraph(
 ) {
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel() }
     val storyViewModel: StoryViewModel = viewModel { StoryViewModel() }
+    val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
 
     NavHost(
         navController = navController,
@@ -138,7 +139,6 @@ fun AppNavGraph(
             arguments = listOf(navArgument("userId") { type = NavType.StringType })
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
             ProfileScreen(
                 userId = userId,
                 viewModel = profileViewModel,
@@ -159,7 +159,6 @@ fun AppNavGraph(
         }
 
         composable(Routes.EDIT_PROFILE) { backStackEntry ->
-            val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
             EditProfileScreen(
                 viewModel = profileViewModel,
                 onNavigateBack = { navController.popBackStack() }

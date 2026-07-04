@@ -91,6 +91,9 @@ fun HomeScreen(
                     IconButton(onClick = onNavigateToDMs) {
                         Icon(Icons.Default.MailOutline, contentDescription = "Messages")
                     }
+                    IconButton(onClick = onNavigateToSettings, modifier = Modifier.testTag("settings_button")) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background

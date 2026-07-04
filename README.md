@@ -232,6 +232,81 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
+-- 5. Membuat Notifikasi Otomatis saat Ada Like Baru
+create or replace function public.handle_new_like_notification()
+returns trigger as $$
+declare
+    post_owner uuid;
+begin
+    select user_id into post_owner from public.posts where id = new.post_id;
+    if post_owner is not null and post_owner != new.user_id then
+        insert into public.notifications (recipient_id, sender_id, type, post_id)
+        values (post_owner, new.user_id, 'like', new.post_id);
+    end if;
+    return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_new_like_notify
+after insert on public.likes
+for each row execute function public.handle_new_like_notification();
+
+-- 6. Membuat Notifikasi Otomatis saat Ada Komentar Baru
+create or replace function public.handle_new_comment_notification()
+returns trigger as $$
+declare
+    post_owner uuid;
+begin
+    select user_id into post_owner from public.posts where id = new.post_id;
+    if post_owner is not null and post_owner != new.user_id then
+        insert into public.notifications (recipient_id, sender_id, type, post_id, comment_id)
+        values (post_owner, new.user_id, 'comment', new.post_id, new.id);
+    end if;
+    return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_new_comment_notify
+after insert on public.comments
+for each row execute function public.handle_new_comment_notification();
+
+-- 7. Membuat Notifikasi Otomatis saat Ada Follower Baru
+create or replace function public.handle_new_follow_notification()
+returns trigger as $$
+begin
+    insert into public.notifications (recipient_id, sender_id, type)
+    values (new.following_id, new.follower_id, 'follow');
+    return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_new_follow_notify
+after insert on public.follows
+for each row execute function public.handle_new_follow_notification();
+
+-- 8. Membuat Baris Percakapan (Conversations) secara Otomatis sebelum Pesan Pertama Dikirim
+-- Klien Android hanya mengirim pesan dengan conversation_id gabungan ("user1Id_user2Id")
+-- tanpa pernah membuat baris di tabel conversations terlebih dahulu. Trigger BEFORE INSERT
+-- ini mencegah kegagalan foreign key / RLS pada pesan pertama antara dua pengguna baru.
+create or replace function public.handle_message_before_insert()
+returns trigger as $$
+declare
+    uid1 uuid;
+    uid2 uuid;
+begin
+    uid1 := split_part(new.conversation_id, '_', 1)::uuid;
+    uid2 := split_part(new.conversation_id, '_', 2)::uuid;
+    insert into public.conversations (id, user1_id, user2_id)
+    values (new.conversation_id, uid1, uid2)
+    on conflict (id) do nothing;
+    return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_message_before_insert
+before insert on public.messages
+for each row execute function public.handle_message_before_insert();
+
 -- SINKRONISASI: Salin data pengguna yang sudah terlanjur mendaftar tetapi belum memiliki profil
 insert into public.profiles (id, username, email, display_name, avatar_color, bio, is_private)
 select 

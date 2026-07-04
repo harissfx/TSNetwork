@@ -9,6 +9,7 @@ import com.textsocial.app.data.repository.SupabaseAuthException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // 1. SPLASH VIEWMODEL
 class SplashViewModel : ViewModel() {
@@ -577,17 +578,21 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             val userResult = userRepo.getProfile(userId)
+            // getProfile() resolves the "me_id" placeholder to the real UUID internally,
+            // so we must use profile.id (not the raw userId param) when matching posts below.
+            var resolvedUserId = userId
             if (userResult.isSuccess) {
                 val profile = userResult.getOrNull()
                 _user.value = profile
                 _bioText.value = profile?.bio ?: ""
                 _displayNameText.value = profile?.displayName ?: ""
+                resolvedUserId = profile?.id ?: userId
             }
 
             // Load user's own posts
             val postsResult = postRepo.getPosts()
             if (postsResult.isSuccess) {
-                _posts.value = postsResult.getOrDefault(emptyList()).filter { it.userId == userId }
+                _posts.value = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
             }
             _isLoading.value = false
         }
@@ -601,7 +606,10 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
             _isLoading.value = false
             if (result.isSuccess) {
                 _user.value = current.copy(displayName = _displayNameText.value, bio = _bioText.value)
-                onSuccess()
+                // onSuccess() triggers navigation (popBackStack), which must run on the main thread.
+                withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
             }
         }
     }
