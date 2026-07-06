@@ -22,6 +22,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.ProfileViewModel
@@ -40,7 +42,8 @@ fun ProfileScreen(
     onNavigateToCreatePost: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToProfileMe: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    showBottomBar: Boolean = true
 ) {
     val user by viewModel.user.collectAsState()
     val posts by viewModel.posts.collectAsState()
@@ -77,14 +80,16 @@ fun ProfileScreen(
             )
         },
         bottomBar = {
-            com.textsocial.app.presentation.components.BottomNavigationBar(
-                currentRoute = "profile/$userId",
-                onNavigateToHome = onNavigateToHome,
-                onNavigateToSearch = onNavigateToSearch,
-                onNavigateToCreatePost = onNavigateToCreatePost,
-                onNavigateToNotifications = onNavigateToNotifications,
-                onNavigateToProfile = onNavigateToProfileMe
-            )
+            if (showBottomBar) {
+                com.textsocial.app.presentation.components.BottomNavigationBar(
+                    currentRoute = "profile/$userId",
+                    onNavigateToHome = onNavigateToHome,
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToCreatePost = onNavigateToCreatePost,
+                    onNavigateToNotifications = onNavigateToNotifications,
+                    onNavigateToProfile = onNavigateToProfileMe
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -104,7 +109,7 @@ fun ProfileScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(24.dp),
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 UserAvatarComponent(
@@ -112,7 +117,7 @@ fun ProfileScreen(
                                     avatarColor = profile.avatarColor,
                                     size = AvatarSize.LARGE
                                 )
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
 
                                 Text(
                                     text = profile.displayName ?: profile.username,
@@ -127,7 +132,7 @@ fun ProfileScreen(
                                     color = MaterialTheme.colorScheme.outline
                                 )
 
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
                                 Text(
                                     text = profile.bio ?: "No bio added yet.",
@@ -137,7 +142,7 @@ fun ProfileScreen(
                                     modifier = Modifier.padding(horizontal = 16.dp)
                                 )
 
-                                Spacer(modifier = Modifier.height(24.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
                                 // Social stats row
                                 Row(
@@ -151,7 +156,7 @@ fun ProfileScreen(
                                             fontSize = 16.sp
                                         )
                                         Text(
-                                            text = "Posts",
+                                            text = stringResource(R.string.post_title),
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.outline
                                         )
@@ -163,7 +168,7 @@ fun ProfileScreen(
                                             fontSize = 16.sp
                                         )
                                         Text(
-                                            text = "Followers",
+                                            text = stringResource(R.string.follow_title),
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.outline
                                         )
@@ -175,14 +180,14 @@ fun ProfileScreen(
                                             fontSize = 16.sp
                                         )
                                         Text(
-                                            text = "Following",
+                                            text = stringResource(R.string.following_title),
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.outline
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(24.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
 
                                 // Profile action button
                                 if (profile.id == "me_id" || profile.id == currentUserId) {
@@ -198,7 +203,7 @@ fun ProfileScreen(
                                             contentDescription = "Edit Profile Icon"
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Edit Profile")
+                                        Text(stringResource(R.string.edit_title))
                                     }
                                 } else {
                                     Row(
@@ -232,7 +237,7 @@ fun ProfileScreen(
                                         ) {
                                             Icon(Icons.Default.Mail, contentDescription = "Message icon")
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text("Message")
+                                            Text(stringResource(R.string.pesan_title))
                                         }
                                     }
                                 }
@@ -244,10 +249,10 @@ fun ProfileScreen(
                     // User posts listing
                     item {
                         Text(
-                            text = "Posts History",
+                            text = stringResource(R.string.history_title),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -257,7 +262,7 @@ fun ProfileScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(48.dp),
+                                    .padding(32.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(

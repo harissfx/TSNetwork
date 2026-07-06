@@ -1,8 +1,9 @@
 package com.textsocial.app.presentation.screens
-
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -16,10 +17,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.StoryViewModel
@@ -32,16 +36,12 @@ fun StoryScreen(
     onNavigateBack: () -> Unit
 ) {
     val stories by viewModel.stories.collectAsState()
+    val context = LocalContext.current
     val initialIndex by viewModel.selectedStoryIndex.collectAsState()
     var currentStoryIndex by remember(initialIndex) { mutableStateOf(initialIndex) }
     var progress by remember { mutableStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
 
-    // Kunci efek ini ke currentStoryIndex & jumlah story saja (bukan seluruh isi `stories`),
-    // supaya efek TIDAK restart ketika markStoryAsViewed() memicu reload data dan
-    // menambah 1 viewer ke story yang sedang ditonton (yang mengubah isi list `stories`
-    // walau jumlahnya tetap sama). Restart yang tidak disengaja itu menyebabkan progress
-    // bar reset ke 0 dan markStoryAsViewed() terpanggil dua kali untuk story yang sama.
     LaunchedEffect(currentStoryIndex, stories.size) {
         if (stories.isNotEmpty() && currentStoryIndex < stories.size) {
             val activeStory = stories[currentStoryIndex]
@@ -119,12 +119,19 @@ fun StoryScreen(
                                 size = AvatarSize.COMPACT
                             )
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = story.username,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
+                            Column {
+                                Text(
+                                    text = story.username,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = "${com.textsocial.app.util.TimeUtils.timeAgoShort(context, story.createdAt)} · ${com.textsocial.app.util.TimeUtils.storyTimeLeft(context, story.expiresAt)}",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 11.sp
+                                )
+                            }
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -147,11 +154,20 @@ fun StoryScreen(
                         }
                     }
 
-                    // Story Body Text Block
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth(),
+                            .fillMaxWidth()
+                            .pointerInput(currentStoryIndex, stories.size) {
+                                detectTapGestures(onTap = { offset ->
+                                    if (offset.x < size.width / 2f) {
+                                        if (currentStoryIndex > 0) currentStoryIndex--
+                                    } else {
+                                        if (currentStoryIndex < stories.size - 1) currentStoryIndex++
+                                        else onNavigateBack()
+                                    }
+                                })
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -165,9 +181,6 @@ fun StoryScreen(
                         )
                     }
 
-                    // BUG SEBELUMNYA: jumlah & daftar viewer ditampilkan ke SEMUA orang yang
-                    // menonton story ini, padahal seharusnya hanya pemilik story yang boleh
-                    // melihat siapa saja yang sudah melihat story-nya.
                     if (isOwnStory) {
                         Box(
                             modifier = Modifier
@@ -190,7 +203,7 @@ fun StoryScreen(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "${story.views.size} Views",
+                                    text = stringResource(R.string.view_story, story.views.size),
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -200,7 +213,6 @@ fun StoryScreen(
                     }
                 }
 
-                // Inline Bottom Viewers Pane overlay — hanya untuk pemilik story.
                 AnimatedVisibility(
                     visible = showViewersSheet && isOwnStory,
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -221,7 +233,7 @@ fun StoryScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "Story Views",
+                                    text = stringResource(R.string.story_view),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
                                 )

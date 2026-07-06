@@ -13,6 +13,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.viewmodel.ProfileViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,7 +30,7 @@ fun EditProfileScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Edit Profile", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.edits_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
@@ -67,7 +69,7 @@ fun EditProfileScreen(
                 OutlinedTextField(
                     value = displayNameText,
                     onValueChange = { viewModel.onDisplayNameChange(it) },
-                    label = { Text("Display Name") },
+                    label = { Text(stringResource(R.string.displayname_title))},
                     modifier = Modifier.fillMaxWidth().testTag("edit_display_name"),
                     singleLine = true
                 )
@@ -77,7 +79,7 @@ fun EditProfileScreen(
                 OutlinedTextField(
                     value = bioText,
                     onValueChange = { viewModel.onBioChange(it) },
-                    label = { Text("Bio (Tell us about yourself)") },
+                    label = { Text(stringResource(R.string.displaybio_title))},
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(140.dp)

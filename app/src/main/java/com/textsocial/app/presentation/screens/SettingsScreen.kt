@@ -1,9 +1,11 @@
 package com.textsocial.app.presentation.screens
 
+import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -12,11 +14,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.textsocial.app.R
 import com.textsocial.app.di.ServiceLocator
+import com.textsocial.app.util.LocaleManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,15 +32,15 @@ fun SettingsScreen(
     onLogoutSuccess: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     var isPrivateAccount by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
     var currentDisplayName by remember { mutableStateOf<String?>(null) }
     var currentBio by remember { mutableStateOf<String?>(null) }
     var isLoadingProfile by remember { mutableStateOf(true) }
+    var selectedLanguage by remember { mutableStateOf(LocaleManager.getSelectedLanguage(context)) }
 
-    // Ambil status privasi (dan field lain) yang sebenarnya dari server setiap kali
-    // layar ini dibuka, supaya switch menampilkan nilai yang benar-benar tersimpan,
-    // bukan selalu mulai dari false.
     LaunchedEffect(Unit) {
         val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
         if (myId != null) {
@@ -51,10 +57,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("App Settings", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.settings_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.go_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -72,13 +78,12 @@ fun SettingsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(14.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Section 1: Security and Account
                 Text(
-                    text = "Account & Privacy",
+                    text = stringResource(R.string.section_account_privacy),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.primary,
@@ -91,20 +96,24 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column {
-                        // Privacy Switch row
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Lock, contentDescription = "Privacy icon", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp)
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text("Private Account", fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                                    Text("Only approved users see your posts", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(stringResource(R.string.private_account_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                    Text(stringResource(R.string.private_account_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
                             Switch(
@@ -112,14 +121,13 @@ fun SettingsScreen(
                                 enabled = !isLoadingProfile,
                                 onCheckedChange = { newValue ->
                                     val previousValue = isPrivateAccount
-                                    isPrivateAccount = newValue // update UI langsung (optimistic)
+                                    isPrivateAccount = newValue
                                     coroutineScope.launch {
                                         val result = ServiceLocator.userRepository.updateProfile(
                                             displayName = currentDisplayName,
                                             bio = currentBio,
                                             isPrivate = newValue
                                         )
-                                        // Kalau gagal simpan ke server, kembalikan switch ke nilai semula
                                         result.onFailure {
                                             isPrivateAccount = previousValue
                                         }
@@ -130,31 +138,34 @@ fun SettingsScreen(
 
                         Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                        // Change password row
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { showPasswordDialog = true }
-                                .padding(16.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Security, contentDescription = "Security icon", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp)
+                            ) {
+                                Icon(Icons.Default.Security, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text("Change Password", fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                                    Text("Regularly update your credentials", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(stringResource(R.string.change_password_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                    Text(stringResource(R.string.change_password_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Arrow right")
+                            Icon(Icons.Default.ChevronRight, contentDescription = null)
                         }
                     }
                 }
 
-                // Section 2: Technical info & Open Source Credits
                 Text(
-                    text = "About",
+                    text = stringResource(R.string.section_language),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.primary,
@@ -166,14 +177,52 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Info, contentDescription = "About", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showLanguageDialog = true }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            Icon(Icons.Default.Language, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.width(12.dp))
-                            Text("OpenText Client v1.0.0", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Column {
+                                Text(stringResource(R.string.language_row_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                Text(stringResource(R.string.language_row_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null)
+                    }
+                }
+
+                Text(
+                    text = stringResource(R.string.section_about),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(stringResource(R.string.app_version_label), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                         Text(
-                            text = "A complete open-source text-based social platform built with Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, and Upstash Redis rate-limiting.",
+                            text = stringResource(R.string.app_description),
                             fontSize = 13.sp,
                             lineHeight = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -183,7 +232,6 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Logout Action
                 Button(
                     onClick = {
                         coroutineScope.launch {
@@ -200,15 +248,64 @@ fun SettingsScreen(
                         contentColor = MaterialTheme.colorScheme.onErrorContainer
                     )
                 ) {
-                    Icon(Icons.Default.ExitToApp, contentDescription = "Logout icon")
+                    Icon(Icons.Default.ExitToApp, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Logout Session", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.logout_button), fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 
-    // Change Password Dialog
+    if (showLanguageDialog) {
+        val options = listOf(
+            LocaleManager.LANG_SYSTEM to stringResource(R.string.language_option_system),
+            LocaleManager.LANG_INDONESIAN to stringResource(R.string.language_option_indonesian),
+            LocaleManager.LANG_ENGLISH to stringResource(R.string.language_option_english)
+        )
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text(stringResource(R.string.language_row_title)) },
+            text = {
+                Column {
+                    options.forEach { (tag, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selectedLanguage == tag,
+                                    onClick = {
+                                        selectedLanguage = tag
+                                        LocaleManager.setSelectedLanguage(context, tag)
+                                        showLanguageDialog = false
+                                        (context as? Activity)?.recreate()
+                                    }
+                                )
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedLanguage == tag,
+                                onClick = {
+                                    selectedLanguage = tag
+                                    LocaleManager.setSelectedLanguage(context, tag)
+                                    showLanguageDialog = false
+                                    (context as? Activity)?.recreate()
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(stringResource(R.string.cancel_button))
+                }
+            }
+        )
+    }
+
     if (showPasswordDialog) {
         var newPass by remember { mutableStateOf("") }
         var confirmPass by remember { mutableStateOf("") }
@@ -216,23 +313,23 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showPasswordDialog = false },
-            title = { Text("Update Password") },
+            title = { Text(stringResource(R.string.update_password_dialog_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (isSuccess) {
-                        Text("Password updated successfully!", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.password_updated_success), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                     } else {
-                        Text("All password inputs are encrypted in-transit.")
+                        Text(stringResource(R.string.password_encrypted_note))
                         OutlinedTextField(
                             value = newPass,
                             onValueChange = { newPass = it },
-                            label = { Text("New Password") },
+                            label = { Text(stringResource(R.string.new_password_label)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = confirmPass,
                             onValueChange = { confirmPass = it },
-                            label = { Text("Confirm New Password") },
+                            label = { Text(stringResource(R.string.confirm_password_label)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -240,7 +337,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 if (isSuccess) {
-                    Button(onClick = { showPasswordDialog = false }) { Text("OK") }
+                    Button(onClick = { showPasswordDialog = false }) { Text(stringResource(R.string.ok_button)) }
                 } else {
                     Button(
                         onClick = {
@@ -250,13 +347,13 @@ fun SettingsScreen(
                         },
                         enabled = newPass.isNotEmpty() && newPass == confirmPass
                     ) {
-                        Text("Update")
+                        Text(stringResource(R.string.update_button))
                     }
                 }
             },
             dismissButton = {
                 if (!isSuccess) {
-                    TextButton(onClick = { showPasswordDialog = false }) { Text("Cancel") }
+                    TextButton(onClick = { showPasswordDialog = false }) { Text(stringResource(R.string.cancel_button)) }
                 }
             }
         )

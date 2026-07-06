@@ -1,21 +1,26 @@
 package com.textsocial.app.presentation.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
@@ -25,9 +30,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.textsocial.app.di.ServiceLocator
 import com.textsocial.app.domain.model.Post
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.LinkTextComponent
@@ -48,11 +56,15 @@ fun HomeScreen(
     onNavigateToCreateStory: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToDMs: () -> Unit,
-    onNavigateToNotifications: () -> Unit
+    onNavigateToNotifications: () -> Unit,
+    unreadMessagesCount: Int = 0,
+    unreadNotificationsCount: Int = 0,
+    showBottomBar: Boolean = true
 ) {
     val posts by homeViewModel.posts.collectAsState()
     val isLoading by homeViewModel.isLoading.collectAsState()
     val activeHashtag by homeViewModel.activeHashtag.collectAsState()
+    val feedMode by homeViewModel.feedMode.collectAsState()
     val stories by storyViewModel.stories.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -90,7 +102,17 @@ fun HomeScreen(
                         Icon(Icons.Default.Search, contentDescription = "Search Users & Tags")
                     }
                     IconButton(onClick = onNavigateToDMs) {
-                        Icon(Icons.Default.MailOutline, contentDescription = "Messages")
+                        BadgedBox(
+                            badge = {
+                                if (unreadMessagesCount > 0) {
+                                    Badge {
+                                        Text(if (unreadMessagesCount > 99) "99+" else unreadMessagesCount.toString())
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.MailOutline, contentDescription = "Messages")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -109,173 +131,235 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            com.textsocial.app.presentation.components.BottomNavigationBar(
-                currentRoute = "home",
-                onNavigateToHome = { /* Already Home */ },
-                onNavigateToSearch = onNavigateToSearch,
-                onNavigateToCreatePost = onNavigateToCreatePost,
-                onNavigateToNotifications = onNavigateToNotifications,
-                onNavigateToProfile = { onNavigateToProfile("me_id") }
-            )
+            if (showBottomBar) {
+                com.textsocial.app.presentation.components.BottomNavigationBar(
+                    currentRoute = "home",
+                    onNavigateToHome = { /* Already Home */ },
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToCreatePost = onNavigateToCreatePost,
+                    onNavigateToNotifications = onNavigateToNotifications,
+                    onNavigateToProfile = { onNavigateToProfile("me_id") },
+                    unreadNotificationsCount = unreadNotificationsCount
+                )
+            }
         }
     ) { innerPadding ->
-        Box(
+
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = {
+                homeViewModel.loadPosts(activeHashtag)
+                storyViewModel.loadStories()
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(MaterialTheme.colorScheme.background)
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 80.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
             ) {
-                // Stories section at the top of the feed
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp)
-                    ) {
-                        Row(
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    item {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(vertical = 8.dp)
                         ) {
-                            Text(
-                                text = "Stories",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            TextButton(onClick = onNavigateToCreateStory) {
-                                Text("+ Create", fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.home_stories_title),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                TextButton(onClick = onNavigateToCreateStory) {
+                                    Text(stringResource(R.string.story_create), fontWeight = FontWeight.Bold)
+                                }
                             }
-                        }
 
-                        // `stories` sudah dikelompokkan per user (lihat StoryViewModel.loadStories),
-                        // jadi di sini kita cukup ambil satu entri representatif per user supaya
-                        // tiap user hanya tampil sebagai SATU bubble, walau dia punya beberapa story.
-                        val storyBubbleUsers = remember(stories) { stories.distinctBy { it.userId } }
+                            val storyBubbleUsers = remember(stories) { stories.distinctBy { it.userId } }
+                            val myUserId = remember { ServiceLocator.encryptedPreferencesManager.getUserId() }
+                            val myUsername = remember { ServiceLocator.encryptedPreferencesManager.getUsername() }
 
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(storyBubbleUsers) { story ->
-                                val storyCountForUser = stories.count { it.userId == story.userId }
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .clickable {
-                                            // Mulai dari story PALING LAMA milik user ini (index pertama
-                                            // dalam grup), supaya urutan tontonannya kronologis seperti IG.
-                                            val firstIndexForUser = stories.indexOfFirst { it.userId == story.userId }
-                                            storyViewModel.setSelectedStoryIndex(firstIndexForUser)
-                                            onNavigateToStories()
-                                        }
-                                        .padding(vertical = 4.dp)
-                                ) {
-                                    Box {
-                                        UserAvatarComponent(
-                                            username = story.username,
-                                            avatarColor = story.avatarColor,
-                                            size = AvatarSize.MEDIUM,
-                                            modifier = Modifier.background(
-                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                shape = androidx.compose.foundation.shape.CircleShape
-                                            )
-                                        )
-                                        if (storyCountForUser > 1) {
-                                            Surface(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                shape = androidx.compose.foundation.shape.CircleShape,
+                            val unseenRingBrush = Brush.sweepGradient(
+                                listOf(
+                                    Color(0xFFFEDA75),
+                                    Color(0xFFFA7E1E),
+                                    Color(0xFFD62976),
+                                    Color(0xFF962FBF),
+                                    Color(0xFF4F5BD5),
+                                    Color(0xFFFEDA75)
+                                )
+                            )
+                            val seenRingColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(storyBubbleUsers) { story ->
+                                    val storyCountForUser = stories.count { it.userId == story.userId }
+                                    val isOwnStory = story.userId == myUserId
+                                    val hasUnseenStory = isOwnStory || myUsername == null ||
+                                            stories.any { it.userId == story.userId && !it.views.contains(myUsername) }
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clickable {
+
+                                                val firstIndexForUser = stories.indexOfFirst { it.userId == story.userId }
+                                                storyViewModel.setSelectedStoryIndex(firstIndexForUser)
+                                                onNavigateToStories()
+                                            }
+                                            .padding(vertical = 4.dp)
+                                    ) {
+                                        Box {
+                                            Box(
                                                 modifier = Modifier
-                                                    .align(Alignment.BottomEnd)
-                                                    .size(16.dp)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        text = storyCountForUser.toString(),
-                                                        fontSize = 9.sp,
-                                                        color = MaterialTheme.colorScheme.onPrimary
+                                                    .padding(3.dp)
+                                                    .border(
+                                                        width = 2.5.dp,
+                                                        brush = if (hasUnseenStory) unseenRingBrush else Brush.linearGradient(
+                                                            listOf(seenRingColor, seenRingColor)
+                                                        ),
+                                                        shape = CircleShape
                                                     )
+                                                    .padding(3.dp)
+                                            ) {
+                                                UserAvatarComponent(
+                                                    username = story.username,
+                                                    avatarColor = story.avatarColor,
+                                                    size = AvatarSize.MEDIUM,
+                                                    modifier = Modifier.background(
+                                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                                        shape = androidx.compose.foundation.shape.CircleShape
+                                                    )
+                                                )
+                                            }
+                                            if (storyCountForUser > 1) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .size(16.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(
+                                                            text = storyCountForUser.toString(),
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.onPrimary
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = story.username,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.width(60.dp)
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = story.username,
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.width(60.dp)
+                                }
+                            }
+                            Divider(
+                                modifier = Modifier.padding(top = 8.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+
+                    if (activeHashtag == null) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    com.textsocial.app.presentation.viewmodel.FeedMode.FOR_YOU to stringResource(R.string.feed_mode_for_you),
+                                    com.textsocial.app.presentation.viewmodel.FeedMode.LATEST to stringResource(R.string.feed_mode_latest)
+                                ).forEach { (mode, label) ->
+                                    val selected = feedMode == mode
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { homeViewModel.setFeedMode(mode) },
+                                        label = { Text(label, fontSize = 13.sp) }
                                     )
                                 }
                             }
                         }
-                        Divider(
-                            modifier = Modifier.padding(top = 12.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                        )
                     }
-                }
 
-                if (isLoading && posts.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                } else if (posts.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(300.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    Icons.Outlined.ChatBubbleOutline,
-                                    contentDescription = "Empty",
-                                    tint = MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    "No posts found yet. Be the first to share!",
-                                    color = MaterialTheme.colorScheme.outline,
-                                    fontSize = 14.sp
-                                )
+                    if (isLoading && posts.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
                             }
                         }
-                    }
-                } else {
-                    items(posts) { post ->
-                        PostItem(
-                            post = post,
-                            onLikeToggle = { homeViewModel.toggleLike(post) },
-                            onPostClick = { onNavigateToPostDetail(post.id) },
-                            onUserClick = { onNavigateToProfile(post.userId) },
-                            onHashtagClick = { hashtag -> homeViewModel.loadPosts(hashtag) },
-                            onMentionClick = { username ->
-                                coroutineScope.launch {
-                                    val result = com.textsocial.app.di.ServiceLocator.userRepository.getProfileByUsername(username)
-                                    result.onSuccess { mentionedUser -> onNavigateToProfile(mentionedUser.id) }
+                    } else if (posts.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(300.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        Icons.Outlined.ChatBubbleOutline,
+                                        contentDescription = "Empty",
+                                        tint = MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        "No posts found yet. Be the first to share!",
+                                        color = MaterialTheme.colorScheme.outline,
+                                        fontSize = 14.sp
+                                    )
                                 }
-                            },
-                            onDeleteClick = { homeViewModel.deletePost(post.id) }
-                        )
+                            }
+                        }
+                    } else {
+                        items(posts) { post ->
+                            PostItem(
+                                post = post,
+                                onLikeToggle = { homeViewModel.toggleLike(post) },
+                                onPostClick = { onNavigateToPostDetail(post.id) },
+                                onUserClick = { onNavigateToProfile(post.userId) },
+                                onHashtagClick = { hashtag -> homeViewModel.loadPosts(hashtag) },
+                                onMentionClick = { username ->
+                                    coroutineScope.launch {
+                                        val result = com.textsocial.app.di.ServiceLocator.userRepository.getProfileByUsername(username)
+                                        result.onSuccess { mentionedUser -> onNavigateToProfile(mentionedUser.id) }
+                                    }
+                                },
+                                onDeleteClick = { homeViewModel.deletePost(post.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -297,7 +381,7 @@ fun PostItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
             .clickable { onPostClick() },
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
@@ -306,7 +390,7 @@ fun PostItem(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -330,11 +414,18 @@ fun PostItem(
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = "@${post.username}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "@${post.username}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Text(
+                                text = " · ${com.textsocial.app.util.TimeUtils.timeAgoShort(context, post.createdAt)}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
 
@@ -351,7 +442,7 @@ fun PostItem(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Body
             LinkTextComponent(
@@ -364,7 +455,7 @@ fun PostItem(
                 onMentionClick = onMentionClick
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             // Footer Actions
             Row(

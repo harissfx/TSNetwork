@@ -1,12 +1,14 @@
 package com.textsocial.app.presentation.screens
 
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,10 +25,32 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.DMChatViewModel
+import com.textsocial.app.domain.model.Message
+import com.textsocial.app.util.TimeUtils
 import kotlinx.coroutines.launch
+
+private sealed class ChatRow {
+    data class DateSeparator(val label: String) : ChatRow()
+    data class MessageRow(val message: Message) : ChatRow()
+}
+
+private fun buildChatRows(context: Context, messages: List<Message>): List<ChatRow> {
+    val rows = mutableListOf<ChatRow>()
+    var previous: Message? = null
+    for (msg in messages) {
+        if (previous == null || !TimeUtils.isSameCalendarDay(previous.createdAt, msg.createdAt)) {
+            rows += ChatRow.DateSeparator(TimeUtils.dayLabel(context, msg.createdAt))
+        }
+        rows += ChatRow.MessageRow(msg)
+        previous = msg
+    }
+    return rows
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -35,26 +59,27 @@ fun DMChatScreen(
     otherUsername: String,
     viewModel: DMChatViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToProfile: (String) -> Unit
+    onNavigateToProfile: (String) -> Unit,
+    onMessagesRead: () -> Unit = {}
 ) {
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     var messageForDeleteMenu by remember { mutableStateOf<String?>(null) }
 
+    val chatRows = remember(messages) { buildChatRows(context, messages) }
+
     LaunchedEffect(otherUserId) {
-        viewModel.initChat(otherUserId)
+        viewModel.initChat(otherUserId, onMessagesRead = onMessagesRead)
     }
 
-    // Fix #5: auto-scroll ke pesan paling bawah setiap kali ada pesan baru
-    // (baik yang kita kirim sendiri maupun yang masuk dari lawan chat), jadi
-    // tidak perlu scroll manual seperti sebelumnya.
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+    LaunchedEffect(chatRows.size) {
+        if (chatRows.isNotEmpty()) {
             coroutineScope.launch {
-                listState.animateScrollToItem(messages.size - 1)
+                listState.animateScrollToItem(chatRows.size - 1)
             }
         }
     }
@@ -115,7 +140,7 @@ fun DMChatScreen(
                         TextField(
                             value = messageText,
                             onValueChange = { viewModel.onMessageTextChange(it) },
-                            placeholder = { Text("Write a message...") },
+                            placeholder = { Text(stringResource(R.string.dm_entry)) },
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("dm_chat_input_field"),
@@ -156,7 +181,34 @@ fun DMChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
             ) {
-                items(messages, key = { it.id }) { msg ->
+                itemsIndexed(
+                    chatRows,
+                    key = { index, row ->
+                        when (row) {
+                            is ChatRow.DateSeparator -> "sep_$index"
+                            is ChatRow.MessageRow -> row.message.id
+                        }
+                    }
+                ) { _, row ->
+                    if (row is ChatRow.DateSeparator) {
+                        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = row.label,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                        return@itemsIndexed
+                    }
+
+                    val msg = (row as ChatRow.MessageRow).message
                     val isMyMessage = msg.senderId != otherUserId
 
                     Box(
@@ -180,8 +232,7 @@ fun DMChatScreen(
                                         .combinedClickable(
                                             onClick = {},
                                             onLongClick = {
-                                                // Fix #9: hapus untuk semua orang, hanya untuk pesan sendiri
-                                                // dan yang belum pernah dihapus sebelumnya.
+
                                                 if (isMyMessage && !msg.isDeleted) {
                                                     messageForDeleteMenu = msg.id
                                                 }
@@ -189,7 +240,7 @@ fun DMChatScreen(
                                         )
                                 ) {
                                     Text(
-                                        text = if (msg.isDeleted) "Pesan ini telah dihapus" else msg.text,
+                                        text = if (msg.isDeleted) stringResource(R.string.pesan_dihapus) else msg.text,
                                         color = if (isMyMessage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
                                         fontSize = 14.sp,
                                         fontStyle = if (msg.isDeleted) FontStyle.Italic else FontStyle.Normal,
@@ -201,7 +252,7 @@ fun DMChatScreen(
                                     onDismissRequest = { messageForDeleteMenu = null }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("Hapus untuk semua orang") },
+                                        text = { Text(stringResource(R.string.hapus_verif)) },
                                         onClick = {
                                             viewModel.deleteMessage(msg.id)
                                             messageForDeleteMenu = null
@@ -211,7 +262,11 @@ fun DMChatScreen(
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isMyMessage && msg.isRead) "Read" else "",
+                                text = if (isMyMessage && msg.isRead) {
+                                    "${TimeUtils.clockTime(msg.createdAt)} · Read"
+                                } else {
+                                    TimeUtils.clockTime(msg.createdAt)
+                                },
                                 fontSize = 10.sp,
                                 color = MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(horizontal = 4.dp)

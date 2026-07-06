@@ -1,5 +1,5 @@
 package com.textsocial.app.presentation.screens
-
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.NotificationViewModel
@@ -31,15 +33,17 @@ fun NotificationScreen(
     onNavigateToCreatePost: () -> Unit,
     onNavigateToProfileMe: () -> Unit,
     onNavigateToProfile: (String) -> Unit,
-    onNavigateToPostDetail: (String) -> Unit
+    onNavigateToPostDetail: (String, String?) -> Unit,
+    showBottomBar: Boolean = true
 ) {
     val notifications by viewModel.notifications.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Activity Notifications", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.notif_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
@@ -51,14 +55,16 @@ fun NotificationScreen(
             )
         },
         bottomBar = {
-            com.textsocial.app.presentation.components.BottomNavigationBar(
-                currentRoute = "notifications",
-                onNavigateToHome = onNavigateToHome,
-                onNavigateToSearch = onNavigateToSearch,
-                onNavigateToCreatePost = onNavigateToCreatePost,
-                onNavigateToNotifications = { /* Already Notifications */ },
-                onNavigateToProfile = onNavigateToProfileMe
-            )
+            if (showBottomBar) {
+                com.textsocial.app.presentation.components.BottomNavigationBar(
+                    currentRoute = "notifications",
+                    onNavigateToHome = onNavigateToHome,
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToCreatePost = onNavigateToCreatePost,
+                    onNavigateToNotifications = { /* Already Notifications */ },
+                    onNavigateToProfile = onNavigateToProfileMe
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -94,16 +100,18 @@ fun NotificationScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .background(
+                                    if (!alert.isRead) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                    else Color.Transparent
+                                )
                                 .clickable {
-                                    // like/comment/mention mengarah ke post terkait;
-                                    // follow mengarah ke profil orang yang follow.
                                     if (alert.type == "follow") {
                                         onNavigateToProfile(alert.senderId)
                                     } else if (alert.postId != null) {
-                                        onNavigateToPostDetail(alert.postId)
+                                        onNavigateToPostDetail(alert.postId, alert.commentId)
                                     }
                                 }
-                                .padding(16.dp),
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             UserAvatarComponent(
@@ -141,17 +149,34 @@ fun NotificationScreen(
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
+                                val typeText = when (alert.type) {
+                                    "like" -> stringResource(R.string.notif_liked_post)
+                                    "comment" -> stringResource(R.string.notif_commented_post)
+                                    "follow" -> stringResource(R.string.notif_started_following)
+                                    "mention" -> stringResource(R.string.notif_mentioned_you)
+                                    else -> stringResource(R.string.notif_generic)
+                                }
                                 Text(
-                                    text = alert.text,
+                                    text = typeText,
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                text = alert.createdAt,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = com.textsocial.app.util.TimeUtils.timeAgoShort(context, alert.createdAt),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                if (!alert.isRead) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+                                    )
+                                }
+                            }
                         }
                         Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }

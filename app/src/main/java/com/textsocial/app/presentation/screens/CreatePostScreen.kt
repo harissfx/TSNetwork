@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.di.ServiceLocator
 import com.textsocial.app.domain.model.User
 import com.textsocial.app.presentation.components.AvatarSize
@@ -33,7 +35,8 @@ fun CreatePostScreen(
     onNavigateToHome: () -> Unit,
     onNavigateToSearch: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToProfileMe: () -> Unit
+    onNavigateToProfileMe: () -> Unit,
+    showBottomBar: Boolean = true
 ) {
     val text by viewModel.text.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -102,7 +105,7 @@ fun CreatePostScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("New Post", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.newpost_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
@@ -114,7 +117,7 @@ fun CreatePostScreen(
                         enabled = text.isNotBlank() && !isLoading,
                         modifier = Modifier.padding(end = 8.dp).testTag("publish_post_button")
                     ) {
-                        Text("Post")
+                        Text(stringResource(R.string.posts_title))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -123,14 +126,16 @@ fun CreatePostScreen(
             )
         },
         bottomBar = {
-            com.textsocial.app.presentation.components.BottomNavigationBar(
-                currentRoute = "create_post",
-                onNavigateToHome = onNavigateToHome,
-                onNavigateToSearch = onNavigateToSearch,
-                onNavigateToCreatePost = { /* Already Create Post */ },
-                onNavigateToNotifications = onNavigateToNotifications,
-                onNavigateToProfile = onNavigateToProfileMe
-            )
+            if (showBottomBar) {
+                com.textsocial.app.presentation.components.BottomNavigationBar(
+                    currentRoute = "create_post",
+                    onNavigateToHome = onNavigateToHome,
+                    onNavigateToSearch = onNavigateToSearch,
+                    onNavigateToCreatePost = { /* Already Create Post */ },
+                    onNavigateToNotifications = onNavigateToNotifications,
+                    onNavigateToProfile = onNavigateToProfileMe
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -159,7 +164,7 @@ fun CreatePostScreen(
                         fieldValue = it
                         viewModel.onTextChange(it.text)
                     },
-                    placeholder = { Text("What's happening? Type #hashtags or mention @users...") },
+                    placeholder = { Text(stringResource(R.string.penjelasanpost_title)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -222,7 +227,7 @@ fun CreatePostScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$charsRemaining characters left",
+                        text = stringResource(R.string.limit_karakter, charsRemaining),
                         fontSize = 13.sp,
                         color = if (charsRemaining < 50) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
                     )

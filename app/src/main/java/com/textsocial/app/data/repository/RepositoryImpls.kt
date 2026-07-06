@@ -406,14 +406,49 @@ class PostRepositoryImpl(
 
     override suspend fun createComment(postId: String, text: String, parentId: String?): Result<Unit> {
         return try {
+            val myId = prefs.getUserId() ?: ""
             val body = com.textsocial.app.data.model.CreateCommentRequest(
                 post_id = postId,
-                user_id = (prefs.getUserId() ?: ""),
+                user_id = myId,
                 content = text,
                 parent_id = parentId
             )
             val response = apiService.createComment(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to create comment: ${response.code()}"))
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("Failed to create comment: ${response.code()}"))
+            }
+
+            // Kirim notifikasi tipe "mention" ke setiap @username yang disebut di teks
+            // komentar, sama seperti pada post, supaya orang yang di-mention di kolom
+            // komentar juga kebagian notifikasi.
+            val createdCommentId = response.body()?.firstOrNull()?.id
+            if (createdCommentId != null) {
+                val mentionedUsernames = Regex("@([a-zA-Z0-9_]+)").findAll(text)
+                    .map { it.groupValues[1] }
+                    .distinct()
+                    .toList()
+                for (username in mentionedUsernames) {
+                    try {
+                        val profileResp = apiService.getProfilesByUsername("eq.$username")
+                        val mentionedUser = profileResp.body()?.firstOrNull()
+                        if (mentionedUser != null && mentionedUser.id != myId) {
+                            apiService.createNotification(
+                                com.textsocial.app.data.model.CreateNotificationRequest(
+                                    recipient_id = mentionedUser.id,
+                                    sender_id = myId,
+                                    type = "mention",
+                                    post_id = postId,
+                                    comment_id = createdCommentId
+                                )
+                            )
+                        }
+                    } catch (e: Exception) {
+                        // Satu mention gagal notif tidak boleh menggagalkan komentar yang sudah berhasil dibuat
+                    }
+                }
+            }
+
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -702,6 +737,10 @@ class MessageRepositoryImpl(
                     } else null
 
                     val latestMsg = dto.messages.maxByOrNull { it.created_at }
+                    // Belum dibaca = pesan yang dikirim LAWAN bicara (bukan diri sendiri)
+                    // dan belum ditandai is_read=true (pesan sendiri tidak pernah dihitung
+                    // sebagai "belum dibaca" walau is_read-nya masih false di server).
+                    val unreadCount = dto.messages.count { it.sender_id != myId && !it.is_read }
 
                     Conversation(
                         id = dto.id,
@@ -709,7 +748,8 @@ class MessageRepositoryImpl(
                         otherUsername = otherProfile?.username ?: "user_${otherUserId.take(4)}",
                         otherAvatarColor = getAvatarColor(otherProfile?.username),
                         lastMessage = latestMsg?.content,
-                        lastMessageTime = latestMsg?.created_at ?: dto.updated_at
+                        lastMessageTime = latestMsg?.created_at ?: dto.updated_at,
+                        unreadCount = unreadCount
                     )
                 }
                 Result.success(list.sortedByDescending { it.lastMessageTime })
@@ -1073,13 +1113,7 @@ class UserRepositoryImpl(
                 val notifications = response.body()!!.map { dto ->
                     val senderUsername = dto.sender?.username ?: "someone"
                     val senderAvatarColor = getAvatarColor(senderUsername)
-                    val typeText = when (dto.type) {
-                        "like" -> "liked your post"
-                        "comment" -> "commented on your post"
-                        "follow" -> "started following you"
-                        "mention" -> "mentioned you in a post"
-                        else -> "sent you a notification"
-                    }
+
                     Notification(
                         id = dto.id,
                         type = dto.type,
@@ -1087,13 +1121,29 @@ class UserRepositoryImpl(
                         senderUsername = senderUsername,
                         senderAvatarColor = senderAvatarColor,
                         postId = dto.post_id,
-                        text = typeText,
-                        createdAt = dto.created_at
+                        commentId = dto.comment_id,
+                        text = "",
+                        createdAt = dto.created_at,
+                        isRead = dto.is_read
                     )
                 }
                 Result.success(notifications)
             } else {
                 Result.failure(Exception("Failed to fetch notifications: ${response.code()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun markNotificationsAsRead(): Result<Unit> {
+        return try {
+            val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val response = apiService.markNotificationsAsRead(recipientFilter = "eq.$myId")
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Failed to mark notifications as read: ${response.code()}"))
             }
         } catch (e: Exception) {
             Result.failure(e)

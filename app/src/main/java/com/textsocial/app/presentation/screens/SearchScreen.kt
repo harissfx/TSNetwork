@@ -23,6 +23,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
 import com.textsocial.app.presentation.viewmodel.SearchViewModel
@@ -37,7 +39,8 @@ fun SearchScreen(
     onNavigateToHome: () -> Unit,
     onNavigateToCreatePost: () -> Unit,
     onNavigateToNotifications: () -> Unit,
-    onNavigateToProfileMe: () -> Unit
+    onNavigateToProfileMe: () -> Unit,
+    showBottomBar: Boolean = true
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -51,7 +54,7 @@ fun SearchScreen(
                     TextField(
                         value = searchQuery,
                         onValueChange = { viewModel.onQueryChange(it) },
-                        placeholder = { Text("Search users by username...") },
+                        placeholder = { Text(stringResource(R.string.mencari_title)) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(end = 8.dp)
@@ -85,14 +88,16 @@ fun SearchScreen(
             )
         },
         bottomBar = {
-            com.textsocial.app.presentation.components.BottomNavigationBar(
-                currentRoute = "search",
-                onNavigateToHome = onNavigateToHome,
-                onNavigateToSearch = { /* Already Search */ },
-                onNavigateToCreatePost = onNavigateToCreatePost,
-                onNavigateToNotifications = onNavigateToNotifications,
-                onNavigateToProfile = onNavigateToProfileMe
-            )
+            if (showBottomBar) {
+                com.textsocial.app.presentation.components.BottomNavigationBar(
+                    currentRoute = "search",
+                    onNavigateToHome = onNavigateToHome,
+                    onNavigateToSearch = { /* Already Search */ },
+                    onNavigateToCreatePost = onNavigateToCreatePost,
+                    onNavigateToNotifications = onNavigateToNotifications,
+                    onNavigateToProfile = onNavigateToProfileMe
+                )
+            }
         }
     ) { innerPadding ->
         Box(
@@ -116,7 +121,7 @@ fun SearchScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Trending Hashtags",
+                            text = stringResource(R.string.hastag_title),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground

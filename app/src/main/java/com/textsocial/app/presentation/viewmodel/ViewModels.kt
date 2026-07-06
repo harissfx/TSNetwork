@@ -11,6 +11,68 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// 0. MAIN TAB VIEWMODEL
+// Menyimpan tab mana yang sedang aktif di HorizontalPager MainScreen (Home/Search/
+// CreatePost/Notifications/Profile). Dipakai supaya layar-layar yang di-push di atas
+// MainScreen (mis. profil orang lain) tetap bisa "pindah tab" dengan cara pop kembali
+// ke MainScreen lalu memberi tahu tab mana yang harus ditampilkan.
+class MainTabViewModel : ViewModel() {
+    private val _currentTab = MutableStateFlow(0)
+    val currentTab = _currentTab.asStateFlow()
+
+    fun goToTab(index: Int) {
+        _currentTab.value = index
+    }
+}
+
+// 0B. BADGE VIEWMODEL
+// Dibuat sekali di AppNavGraph (sama seperti MainTabViewModel) supaya angka belum-dibaca
+// tetap sinkron di berbagai layar sekaligus: badge ikon Notifikasi di BottomNavigationBar,
+// badge ikon DM/pesan di TopAppBar HomeScreen, dan indikator per-percakapan di DMListScreen.
+class BadgeViewModel : ViewModel() {
+    private val msgRepo = ServiceLocator.messageRepository
+    private val userRepo = ServiceLocator.userRepository
+
+    private val _unreadMessages = MutableStateFlow(0)
+    val unreadMessages = _unreadMessages.asStateFlow()
+
+    private val _unreadNotifications = MutableStateFlow(0)
+    val unreadNotifications = _unreadNotifications.asStateFlow()
+
+    init {
+        refreshAll()
+    }
+
+    fun refreshAll() {
+        refreshUnreadMessages()
+        refreshUnreadNotifications()
+    }
+
+    fun refreshUnreadMessages() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = ServiceLocator.messageRepository.getConversations()
+            _unreadMessages.value = result.getOrDefault(emptyList()).sumOf { it.unreadCount }
+        }
+    }
+
+    fun refreshUnreadNotifications() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = userRepo.getNotifications()
+            _unreadNotifications.value = result.getOrDefault(emptyList()).count { !it.isRead }
+        }
+    }
+
+    // Dipanggil begitu tab Notifikasi dibuka: badge langsung hilang di UI (optimistic),
+    // sambil PATCH is_read=true dikirim ke server di belakang layar.
+    fun markNotificationsRead() {
+        if (_unreadNotifications.value == 0) return
+        _unreadNotifications.value = 0
+        viewModelScope.launch(Dispatchers.IO) {
+            userRepo.markNotificationsAsRead()
+        }
+    }
+}
+
 // 1. SPLASH VIEWMODEL
 class SplashViewModel : ViewModel() {
     private val authRepo = ServiceLocator.authRepository
@@ -169,9 +231,20 @@ class RegisterViewModel : ViewModel() {
 }
 
 // 4. HOME VIEWMODEL (FEED WITH PAGINATION)
+// Mode urutan feed: LATEST = kronologis murni (paling baru di atas), FOR_YOU =
+// pendekatan "algoritma" sederhana yang menggabungkan seberapa baru postingan
+// dengan seberapa besar engagement-nya (like + komentar), supaya postingan yang
+// rame direspon tetap kelihatan walau bukan yang paling baru — mirip prinsip
+// feed di media sosial modern, tapi dihitung di sisi klien (tanpa server ranking).
+enum class FeedMode { FOR_YOU, LATEST }
+
 class HomeViewModel : ViewModel() {
     private val postRepo = ServiceLocator.postRepository
 
+    // Data mentah hasil fetch dari server (urutan kronologis apa adanya).
+    private val _rawPosts = MutableStateFlow<List<Post>>(emptyList())
+
+    // Data yang benar-benar ditampilkan ke UI, sudah diurutkan sesuai `feedMode`.
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
     val posts = _posts.asStateFlow()
 
@@ -183,6 +256,9 @@ class HomeViewModel : ViewModel() {
 
     private val _activeHashtag = MutableStateFlow<String?>(null)
     val activeHashtag = _activeHashtag.asStateFlow()
+
+    private val _feedMode = MutableStateFlow(FeedMode.FOR_YOU)
+    val feedMode = _feedMode.asStateFlow()
 
     init {
         loadPosts()
@@ -196,10 +272,38 @@ class HomeViewModel : ViewModel() {
             val result = postRepo.getPosts(hashtag)
             _isLoading.value = false
             if (result.isSuccess) {
-                _posts.value = result.getOrDefault(emptyList())
+                _rawPosts.value = result.getOrDefault(emptyList())
+                _posts.value = sortForMode(_rawPosts.value, _feedMode.value)
             } else {
                 _error.value = "Failed to load feed. Swipe down to retry."
             }
+        }
+    }
+
+    /** Ganti mode urutan feed tanpa perlu fetch ulang ke server — cukup re-sort data yang sudah ada. */
+    fun setFeedMode(mode: FeedMode) {
+        if (_feedMode.value == mode) return
+        _feedMode.value = mode
+        _posts.value = sortForMode(_rawPosts.value, mode)
+    }
+
+    // Skor ala "hot ranking" (terinspirasi dari formula gravity Hacker News):
+    // makin banyak like/komentar -> skor naik, tapi skor meluruh seiring waktu
+    // supaya postingan lama tidak selamanya mendominasi feed hanya karena
+    // sempat viral. Komentar diberi bobot lebih besar dari like karena
+    // merefleksikan engagement yang lebih aktif.
+    private fun engagementScore(post: Post): Double {
+        val ageHours = com.textsocial.app.util.TimeUtils.hoursSince(post.createdAt)
+        val engagement = (post.likesCount * 1.5) + (post.commentsCount * 3.0) + 1.0
+        return engagement / Math.pow(ageHours + 2.0, 1.5)
+    }
+
+    private fun sortForMode(list: List<Post>, mode: FeedMode): List<Post> {
+        return when (mode) {
+            FeedMode.LATEST -> list.sortedByDescending {
+                com.textsocial.app.util.TimeUtils.parseToEpochMillis(it.createdAt) ?: 0L
+            }
+            FeedMode.FOR_YOU -> list.sortedByDescending { engagementScore(it) }
         }
     }
 
@@ -207,20 +311,24 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             if (post.isLiked) {
                 postRepo.unlikePost(post.id)
-                _posts.update { current ->
-                    current.map {
+                val updated = { list: List<Post> ->
+                    list.map {
                         if (it.id == post.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
                         else it
                     }
                 }
+                _rawPosts.update(updated)
+                _posts.update(updated)
             } else {
                 postRepo.likePost(post.id)
-                _posts.update { current ->
-                    current.map {
+                val updated = { list: List<Post> ->
+                    list.map {
                         if (it.id == post.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
                         else it
                     }
                 }
+                _rawPosts.update(updated)
+                _posts.update(updated)
             }
         }
     }
@@ -229,6 +337,7 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
             if (result.isSuccess) {
+                _rawPosts.update { current -> current.filter { it.id != postId } }
                 _posts.update { current -> current.filter { it.id != postId } }
             }
         }
@@ -286,8 +395,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     private val _commentText = MutableStateFlow("")
     val commentText = _commentText.asStateFlow()
 
-    // Fix #1: state untuk "membalas komentar X" — kalau tidak null, comment baru yang
-    // dikirim akan jadi balasan (reply) dari komentar ini, bukan komentar baru di root.
     private val _replyingTo = MutableStateFlow<Comment?>(null)
     val replyingTo = _replyingTo.asStateFlow()
 
@@ -378,12 +485,22 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deleteComment(commentId)
             if (result.isSuccess) {
-                // Hapus komentar itu sendiri sekaligus semua balasannya di layar
-                // (di database sudah "on delete cascade", supaya UI konsisten).
-                _comments.update { current ->
-                    current.filter { it.id != commentId && it.parentId != commentId }
+                // Hapus komentar itu sendiri sekaligus SEMUA turunannya (balasan, balasan
+                // dari balasan, dst — bukan cuma anak langsung) supaya konsisten dengan
+                // "on delete cascade" di database.
+                val current = _comments.value
+                val idsToRemove = mutableSetOf(commentId)
+                var changed = true
+                while (changed) {
+                    changed = false
+                    for (c in current) {
+                        if (c.parentId != null && idsToRemove.contains(c.parentId) && idsToRemove.add(c.id)) {
+                            changed = true
+                        }
+                    }
                 }
-                _post.update { it?.copy(commentsCount = (it.commentsCount - 1).coerceAtLeast(0)) }
+                _comments.value = current.filter { it.id !in idsToRemove }
+                _post.update { it?.copy(commentsCount = (it.commentsCount - idsToRemove.size).coerceAtLeast(0)) }
             }
         }
     }
@@ -532,7 +649,7 @@ class DMChatViewModel : ViewModel() {
 
     private var targetUserId: String = ""
 
-    fun initChat(otherUserId: String) {
+    fun initChat(otherUserId: String, onMessagesRead: () -> Unit = {}) {
         targetUserId = otherUserId
         viewModelScope.launch(Dispatchers.IO) {
             // SEBELUMNYA: histori pesan lama tidak pernah dimuat di sini, hanya
@@ -543,8 +660,10 @@ class DMChatViewModel : ViewModel() {
                 _messages.value = result.getOrDefault(emptyList())
             }
 
-            // Mark read
+            // Mark read -- lalu beri tahu pemanggil (mis. BadgeViewModel) supaya badge
+            // jumlah pesan belum-dibaca di ikon DM/BottomNavigationBar ikut diperbarui.
             msgRepo.markMessagesAsRead(targetUserId)
+            onMessagesRead()
 
             // Dynamic flow observation representing WebSockets / Supabase Realtime in a highly responsive manner!
             msgRepo.observeMessages(targetUserId).collect { list ->
@@ -609,6 +728,29 @@ class NotificationViewModel : ViewModel() {
             val result = userRepo.getNotifications()
             _notifications.value = result.getOrDefault(emptyList())
             _isLoading.value = false
+        }
+    }
+
+    // Dipanggil tiap tab Notifikasi baru saja DIBUKA. SEBELUMNYA: notifikasi ditandai
+    // "sudah dibaca" cuma di server (lewat BadgeViewModel), sementara daftar `_notifications`
+    // di sini tidak pernah ikut di-update -- jadi walau server sudah is_read=true, list yang
+    // sedang tampil di layar tetap pakai data lama (isRead=false), makanya tetap kelihatan
+    // biru terus walaupun user sudah tap salah satu notifikasi dan kembali lagi.
+    // SEKARANG: begitu list terbaru selesai dimuat, kita langsung set semuanya isRead=true
+    // SECARA LOKAL di state ini juga (bukan cuma di server), jadi tampilannya seketika tidak
+    // biru lagi tanpa perlu reload/tab-switch tambahan supaya berubah.
+    fun loadAndMarkAsRead(onDone: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoading.value = true
+            val result = userRepo.getNotifications()
+            val fresh = result.getOrDefault(emptyList())
+            val hadUnread = fresh.any { !it.isRead }
+            _notifications.value = fresh.map { it.copy(isRead = true) }
+            _isLoading.value = false
+            if (hadUnread) {
+                userRepo.markNotificationsAsRead()
+            }
+            onDone()
         }
     }
 }

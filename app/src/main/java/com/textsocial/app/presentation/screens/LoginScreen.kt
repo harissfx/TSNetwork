@@ -19,6 +19,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.viewmodel.LoginViewModel
 
 @Composable
@@ -56,7 +58,7 @@ fun LoginScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Welcome Back",
+                text = stringResource(R.string.welcome_back),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -65,7 +67,7 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Login to join the open-source community",
+                text = stringResource(R.string.welcome_back_title),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -76,7 +78,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value = usernameOrEmail,
                 onValueChange = { viewModel.onUsernameOrEmailChange(it) },
-                label = { Text("Username or Email") },
+                label = { Text(stringResource(R.string.label_email))},
                 leadingIcon = { Icon(Icons.Default.Person, contentDescription = "User Icon") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -87,7 +89,6 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Password Input
             OutlinedTextField(
                 value = password,
                 onValueChange = { viewModel.onPasswordChange(it) },
@@ -149,13 +150,13 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Don't have an account? ",
+                    text = stringResource(R.string.akun_pj),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.outline
                 )
                 TextButton(onClick = onNavigateToRegister) {
                     Text(
-                        text = "Sign Up",
+                        text = stringResource(R.string.tap_df),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary

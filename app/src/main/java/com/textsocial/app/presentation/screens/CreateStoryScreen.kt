@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.viewmodel.StoryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -26,9 +28,7 @@ fun CreateStoryScreen(
     viewModel: StoryViewModel,
     onNavigateBack: () -> Unit
 ) {
-    // Reset harus terjadi SEBELUM collectAsState membaca nilai isFinished, supaya
-    // sisa nilai true dari sesi sebelumnya tidak sempat memicu onNavigateBack() lagi
-    // di composisi pertama layar ini.
+
     remember(Unit) { viewModel.resetComposerState() }
 
     val text by viewModel.storyText.collectAsState()
@@ -47,7 +47,7 @@ fun CreateStoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Add Story", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.story_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
@@ -59,7 +59,7 @@ fun CreateStoryScreen(
                         enabled = text.isNotBlank() && !isLoading,
                         modifier = Modifier.padding(end = 8.dp).testTag("publish_story_button")
                     ) {
-                        Text("Share")
+                        Text(stringResource(R.string.share_tap))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -82,7 +82,7 @@ fun CreateStoryScreen(
                 TextField(
                     value = text,
                     onValueChange = { viewModel.onStoryTextChange(it) },
-                    placeholder = { Text("What is on your mind? Up to 280 characters of text...") },
+                    placeholder = { Text(stringResource(R.string.story_desc)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -109,7 +109,7 @@ fun CreateStoryScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$charsRemaining characters left",
+                        text = stringResource(R.string.limit_karakter, charsRemaining),
                         fontSize = 13.sp,
                         color = if (charsRemaining < 30) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
                     )

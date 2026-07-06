@@ -109,8 +109,9 @@ interface SupabaseApiService {
 
     @POST("rest/v1/comments")
     suspend fun createComment(
-        @Body comment: CreateCommentRequest
-    ): Response<Void>
+        @Body comment: CreateCommentRequest,
+        @Header("Prefer") prefer: String = "return=representation"
+    ): Response<List<CommentDto>>
 
     // --- Comment Likes ---
     @GET("rest/v1/comment_likes")
@@ -238,5 +239,14 @@ interface SupabaseApiService {
     @POST("rest/v1/notifications")
     suspend fun createNotification(
         @Body notification: CreateNotificationRequest
+    ): Response<Void>
+
+    // Menandai semua notifikasi milik recipient sebagai sudah dibaca (dipanggil saat
+    // tab Notifikasi dibuka). Butuh policy RLS "update" di tabel notifications --
+    // lihat catatan tambahan di README.md.
+    @PATCH("rest/v1/notifications")
+    suspend fun markNotificationsAsRead(
+        @Query("recipient_id") recipientFilter: String,
+        @Body updates: MarkAsReadRequest = MarkAsReadRequest()
     ): Response<Void>
 }

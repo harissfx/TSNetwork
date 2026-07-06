@@ -1,3 +1,106 @@
 <resources>
-    <string name="app_name">Text Social Network</string>
+    <string name="app_name">OpenText</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">App Settings</string>
+    <string name="go_back">Go back</string>
+    <string name="section_account_privacy">Account &amp; Privacy</string>
+    <string name="private_account_title">Private Account</string>
+    <string name="private_account_desc">Only approved users see your posts</string>
+    <string name="change_password_title">Change Password</string>
+    <string name="change_password_desc">Regularly update your credentials</string>
+
+    <string name="section_language">Language</string>
+    <string name="language_row_title">App Language</string>
+    <string name="language_row_desc">Choose how the app is displayed</string>
+    <string name="language_option_system">Follow device language</string>
+    <string name="language_option_indonesian">Bahasa Indonesia</string>
+    <string name="language_option_english">English</string>
+
+    <string name="section_about">About</string>
+    <string name="app_version_label">OpenText Client v1.0.0</string>
+    <string name="app_description">A complete open-source text-based social platform built with Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, and Upstash Redis rate-limiting.</string>
+
+    <string name="logout_button">Logout Session</string>
+
+    <string name="update_password_dialog_title">Update Password</string>
+    <string name="password_encrypted_note">All password inputs are encrypted in-transit.</string>
+    <string name="new_password_label">New Password</string>
+    <string name="confirm_password_label">Confirm New Password</string>
+    <string name="password_updated_success">Password updated successfully!</string>
+    <string name="ok_button">OK</string>
+    <string name="update_button">Update</string>
+    <string name="cancel_button">Cancel</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_feed">Feed</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_post">Post</string>
+    <string name="nav_alerts">Alerts</string>
+    <string name="nav_profile">Profile</string>
+    <string name="home_stories_title">Stories</string>
+    <string name="feed_mode_for_you">For You</string>
+    <string name="feed_mode_latest">Latest</string>
+    <string name="time_now">now</string>
+    <string name="time_minutes_short">%1$dm</string>
+    <string name="time_hours_short">%1$dh</string>
+    <string name="time_days_short">%1$dd</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="story_expired">Expired</string>
+    <string name="story_time_left_hours">%1$dh left</string>
+    <string name="story_time_left_minutes">%1$dm left</string>
+    <string name="story_time_left_under_minute">&lt;1m left</string>
+    <string name="story_create">+ Create</string>
+    <string name="welcome_back">Welcome Back</string>
+    <string name="welcome_back_title">Login to join the open-source community</string>
+    <string name="label_email">Username or Email</string>
+    <string name="akun_pj">Don t have an account?</string>
+    <string name="tap_df">Sign Up</string>
+    <string name="register_title">Join OpenText</string>
+    <string name="register_desc">Sign up to participate in pure, open-source threads</string>
+    <string name="input_email_reg">Email Address</string>
+    <string name="input_pwcon">Confirm Password</string>
+    <string name="akun_create">Create Account</string>
+    <string name="sudah_adaakun">Already have an account?</string>
+    <string name="post_title">Posts</string>
+    <string name="follow_title">Followers</string>
+    <string name="following_title">Following</string>
+    <string name="edit_title">Edit Profile</string>
+    <string name="pesan_title">Message</string>
+    <string name="history_title">Posts History</string>
+    <string name="edits_title">Edits Profile</string>
+    <string name="displayname_title">Display Name</string>
+    <string name="displaybio_title">Bio (Tell us about yourself</string>
+    <string name="newpost_title">New Posts</string>
+    <string name="posts_title">Posts</string>
+    <string name="penjelasanpost_title">What s happening? Type #hashtags or mention @users...</string>
+    <string name="limit_karakter">%1$s characters left</string>
+    <string name="rp_komen">Reply @%1$s</string>
+    <string name="like_tit">Likes %1$s</string>
+    <string name="komen_tit">Coments %1$s</string>
+    <string name="balasan_title">See %1$s more replies</string>
+    <string name="lebih_dikit">See less</string>
+    <string name="diskusi_title">Discussion</string>
+    <string name="comment_placeholder_reply">Write your reply...</string>
+    <string name="comment_placeholder_new">Write a comment...</string>
+    <string name="reply_title">Reply @%1$s</string>
+    <string name="reply_tit">Reply</string>
+    <string name="story_title">Add Story</string>
+    <string name="share_tap">Share</string>
+    <string name="story_desc">What is on your mind? Up to 280 characters of text...</string>
+    <string name="view_story">%1$s Views</string>
+    <string name="story_view">Story Views</string>
+    <string name="dm_title">Direct Messages</string>
+    <string name="dm_entry">Write a message...</string>
+    <string name="pesan_dihapus">This message has been deleted.</string>
+    <string name="hapus_verif">Delete for everyone</string>
+    <string name="mencari_title">Search</string>
+    <string name="hastag_title">Trending Hashtags</string>
+    <string name="notif_title">Activity Notifications</string>
+    <string name="notif_liked_post">liked your post</string>
+    <string name="notif_commented_post">commented on your post</string>
+    <string name="notif_started_following">started following you</string>
+    <string name="notif_mentioned_you">mentioned you in a post</string>
+    <string name="notif_generic">sent you a notification</string>
 </resources>

@@ -54,5 +54,6 @@ interface UserRepository {
     suspend fun getFollowingUsers(): Result<List<User>>
     suspend fun searchUsers(query: String): Result<List<User>>
     suspend fun getNotifications(): Result<List<Notification>>
+    suspend fun markNotificationsAsRead(): Result<Unit>
     suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>>
 }

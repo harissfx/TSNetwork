@@ -14,6 +14,17 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 
 ## 💾 1. SKEMA DATABASE & KEBIJAKAN SUPABASE (SQL LENGKAP)
 
+> [!WARNING]
+> **UPDATE: Fitur Badge Notifikasi & Pesan Belum Dibaca.**
+> Kalau proyek Supabase kamu **sudah pernah** menjalankan skrip SQL lengkap di bawah ini sebelumnya, **JANGAN jalankan ulang seluruh skrip itu** -- bagian atasnya berisi `drop table ... cascade` yang akan menghapus semua data yang sudah ada.
+> Cukup jalankan **satu policy tambahan** ini saja di SQL Editor (fitur mark-as-read notifikasi butuh izin UPDATE yang sebelumnya belum ada di tabel `notifications`):
+> ```sql
+> create policy "Allow marking own notifications as read" on public.notifications for update
+>     using (auth.uid() = recipient_id)
+>     with check (auth.uid() = recipient_id);
+> ```
+> Untuk proyek yang **baru dibuat dari nol**, policy ini sudah otomatis termasuk di dalam skrip lengkap di bawah, jadi tidak perlu langkah tambahan apa pun.
+
 > [!IMPORTANT]
 > **CARA MENJALANKAN KODE DI SUPABASE:**
 > 1. Masuk ke dashboard [Supabase](https://supabase.com/).
@@ -428,6 +439,11 @@ create policy "Allow insertion of notifications" on public.notifications for ins
     with check (auth.uid() = sender_id);
 create policy "Allow deletion of own notifications" on public.notifications for delete
     using (auth.uid() = recipient_id);
+-- Dibutuhkan supaya penerima notifikasi bisa menandai notifikasinya sendiri sebagai
+-- sudah dibaca (is_read = true), dipakai oleh fitur badge jumlah belum-dibaca.
+create policy "Allow marking own notifications as read" on public.notifications for update
+    using (auth.uid() = recipient_id)
+    with check (auth.uid() = recipient_id);
 
 -- 8. HAK AKSES (GRANTS)
 -- Memberikan hak akses tabel ke role API (anon dan authenticated)

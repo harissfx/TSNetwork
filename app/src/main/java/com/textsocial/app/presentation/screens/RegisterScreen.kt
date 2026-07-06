@@ -21,6 +21,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 import com.textsocial.app.presentation.viewmodel.RegisterViewModel
 
 @Composable
@@ -67,7 +69,7 @@ fun RegisterScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Join OpenText",
+                text = stringResource(R.string.register_title),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -76,7 +78,7 @@ fun RegisterScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Sign up to participate in pure, open-source threads",
+                text = stringResource(R.string.register_desc),
                 fontSize = 14.sp,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -101,7 +103,7 @@ fun RegisterScreen(
             OutlinedTextField(
                 value = email,
                 onValueChange = { viewModel.onEmailChange(it) },
-                label = { Text("Email Address") },
+                label = { Text(stringResource(R.string.input_email_reg))},
                 leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email Icon") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -138,7 +140,7 @@ fun RegisterScreen(
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = { viewModel.onConfirmPasswordChange(it) },
-                label = { Text("Confirm Password") },
+                label = { Text(stringResource(R.string.input_pwcon))},
                 leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Confirm Password Icon") },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -175,7 +177,7 @@ fun RegisterScreen(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text("Create Account", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.akun_create), fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -187,7 +189,7 @@ fun RegisterScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "Already have an account? ",
+                    text = stringResource(R.string.sudah_adaakun),
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.outline
                 )

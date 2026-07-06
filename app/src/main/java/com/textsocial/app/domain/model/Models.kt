@@ -68,7 +68,8 @@ data class Conversation(
     val otherUsername: String,
     val otherAvatarColor: String,
     val lastMessage: String?,
-    val lastMessageTime: String?
+    val lastMessageTime: String?,
+    val unreadCount: Int = 0 // jumlah pesan dari lawan bicara yang belum ditandai is_read
 ) : Serializable
 
 data class Notification(
@@ -78,6 +79,8 @@ data class Notification(
     val senderUsername: String,
     val senderAvatarColor: String,
     val postId: String?,
+    val commentId: String?,
     val text: String,
-    val createdAt: String
+    val createdAt: String,
+    val isRead: Boolean = false
 ) : Serializable

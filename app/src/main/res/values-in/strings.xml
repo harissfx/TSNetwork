@@ -1,0 +1,106 @@
+<resources>
+    <string name="app_name">OpenText</string>
+
+    <!-- Settings screen -->
+    <string name="settings_title">Pengaturan Aplikasi</string>
+    <string name="go_back">Kembali</string>
+    <string name="section_account_privacy">Akun &amp; Privasi</string>
+    <string name="private_account_title">Akun Privat</string>
+    <string name="private_account_desc">Hanya pengguna yang disetujui bisa melihat postinganmu</string>
+    <string name="change_password_title">Ubah Kata Sandi</string>
+    <string name="change_password_desc">Perbarui kredensialmu secara berkala</string>
+
+    <string name="section_language">Bahasa</string>
+    <string name="language_row_title">Bahasa Aplikasi</string>
+    <string name="language_row_desc">Pilih tampilan bahasa aplikasi</string>
+    <string name="language_option_system">Ikuti bahasa perangkat</string>
+    <string name="language_option_indonesian">Bahasa Indonesia</string>
+    <string name="language_option_english">Inggris</string>
+
+    <string name="section_about">Tentang</string>
+    <string name="app_version_label">OpenText v1.0.0</string>
+    <string name="app_description">Platform media sosial berbasis teks open-source, dibangun dengan Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, dan pembatasan laju Upstash Redis.</string>
+
+    <string name="logout_button">Keluar dari Sesi</string>
+
+    <string name="update_password_dialog_title">Perbarui Kata Sandi</string>
+    <string name="password_encrypted_note">Semua input kata sandi dienkripsi saat dikirim.</string>
+    <string name="new_password_label">Kata Sandi Baru</string>
+    <string name="confirm_password_label">Konfirmasi Kata Sandi Baru</string>
+    <string name="password_updated_success">Kata sandi berhasil diperbarui!</string>
+    <string name="ok_button">OK</string>
+    <string name="update_button">Perbarui</string>
+    <string name="cancel_button">Batal</string>
+
+    <!-- Bottom navigation -->
+    <string name="nav_feed">Beranda</string>
+    <string name="nav_search">Cari</string>
+    <string name="nav_post">Buat</string>
+    <string name="nav_alerts">Notifikasi</string>
+    <string name="nav_profile">Profil</string>
+    <string name="home_stories_title">Story</string>
+    <string name="feed_mode_for_you">Untukmu</string>
+    <string name="feed_mode_latest">Terbaru</string>
+    <string name="time_now">baru saja</string>
+    <string name="time_minutes_short">%1$dm</string>
+    <string name="time_hours_short">%1$dj</string>
+    <string name="time_days_short">%1$dh</string>
+    <string name="day_today">Hari ini</string>
+    <string name="day_yesterday">Kemarin</string>
+    <string name="story_expired">Kedaluwarsa</string>
+    <string name="story_time_left_hours">%1$dj lagi</string>
+    <string name="story_time_left_minutes">%1$dm lagi</string>
+    <string name="story_time_left_under_minute">&lt;1m lagi</string>
+    <string name="story_create">+ Buat</string>
+    <string name="welcome_back">Selamat Datang kembali</string>
+    <string name="welcome_back_title">Masuk untuk bergabung dengan komunitas sumber terbuka</string>
+    <string name="label_email">Nama pengguna atau email</string>
+    <string name="akun_pj">Belum punya akun?</string>
+    <string name="tap_df">Mendaftar</string>
+    <string name="register_title">Bergabunglah dengan OpenText</string>
+    <string name="register_desc">Daftarlah untuk berpartisipasi dalam utas sumber terbuka yang murni.</string>
+    <string name="input_email_reg">Alamat Email</string>
+    <string name="input_pwcon">Konfirmasi Password</string>
+    <string name="akun_create">Buat Akun</string>
+    <string name="sudah_adaakun">Sudah punya akun?</string>
+    <string name="post_title">Postingan</string>
+    <string name="follow_title">Pengikut</string>
+    <string name="following_title">Mengikuti</string>
+    <string name="edit_title">Edit Profil</string>
+    <string name="pesan_title">Pesan</string>
+    <string name="history_title">Riwayat Postingan</string>
+    <string name="edits_title">Edits Profil</string>
+    <string name="displayname_title">Nama Tampilan</string>
+    <string name="displaybio_title">Biodata (Ceritakan tentang diri Anda)</string>
+    <string name="newpost_title">Postingan Baru</string>
+    <string name="posts_title">Posting</string>
+    <string name="penjelasanpost_title">Apa yang sedang terjadi? Ketik #tagar atau sebut @pengguna...</string>
+    <string name="limit_karakter">Tersisa %1$s karakter</string>
+    <string name="rp_komen">Membalas @%1$s</string>
+    <string name="like_tit">Suka %1$s</string>
+    <string name="komen_tit">Komentar %1$s</string>
+    <string name="balasan_title">Lihat %1$s balasan lainnya</string>
+    <string name="lebih_dikit">Lihat lebih sedikit</string>
+    <string name="diskusi_title">Diskusi</string>
+    <string name="comment_placeholder_reply">Tulis balasan...</string>
+    <string name="comment_placeholder_new">Tulis komentar...</string>
+    <string name="reply_title">Balas @%1$s</string>
+    <string name="reply_tit">Balas</string>
+    <string name="story_title">Tambahkan Cerita</string>
+    <string name="share_tap">Membagikan</string>
+    <string name="story_desc">Apa yang sedang Anda pikirkan? Hingga 280 karakter teks...</string>
+    <string name="view_story">%1$s dilihat</string>
+    <string name="story_view">Tayangan Cerita</string>
+    <string name="dm_title">Pesan Langsung</string>
+    <string name="dm_entry">Tulis pesan...</string>
+    <string name="pesan_dihapus">Pesan ini telah dihapus</string>
+    <string name="hapus_verif">Hapus untuk semua orang</string>
+    <string name="mencari_title">Mencari</string>
+    <string name="hastag_title">Tagar yang Sedang Tren</string>
+    <string name="notif_title">Notifikasi Aktivitas</string>
+    <string name="notif_liked_post">menyukai postinganmu</string>
+    <string name="notif_commented_post">mengomentari postinganmu</string>
+    <string name="notif_started_following">mulai mengikutimu</string>
+    <string name="notif_mentioned_you">menyebutmu di sebuah postingan</string>
+    <string name="notif_generic">mengirimimu notifikasi</string>
+</resources>

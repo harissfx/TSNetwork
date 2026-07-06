@@ -15,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import com.textsocial.app.R
 
 @Composable
 fun BottomNavigationBar(
@@ -24,7 +26,8 @@ fun BottomNavigationBar(
     onNavigateToCreatePost: () -> Unit,
     onNavigateToNotifications: () -> Unit,
     onNavigateToProfile: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    unreadNotificationsCount: Int = 0
 ) {
     NavigationBar(
         modifier = modifier.testTag("bottom_nav_bar"),
@@ -45,7 +48,7 @@ fun BottomNavigationBar(
                     contentDescription = "Home"
                 )
             },
-            label = { Text("Feed") },
+            label = { Text(stringResource(R.string.nav_feed)) },
             modifier = Modifier.testTag("nav_home")
         )
         NavigationBarItem(
@@ -57,7 +60,7 @@ fun BottomNavigationBar(
                     contentDescription = "Search"
                 )
             },
-            label = { Text("Search") },
+            label = { Text(stringResource(R.string.nav_search)) },
             modifier = Modifier.testTag("nav_search")
         )
         NavigationBarItem(
@@ -69,19 +72,29 @@ fun BottomNavigationBar(
                     contentDescription = "Create Post"
                 )
             },
-            label = { Text("Post") },
+            label = { Text(stringResource(R.string.nav_post)) },
             modifier = Modifier.testTag("nav_create_post")
         )
         NavigationBarItem(
             selected = isNotifications,
             onClick = { if (!isNotifications) onNavigateToNotifications() },
             icon = {
-                Icon(
-                    imageVector = if (isNotifications) Icons.Filled.Notifications else Icons.Outlined.Notifications,
-                    contentDescription = "Notifications"
-                )
+                BadgedBox(
+                    badge = {
+                        if (unreadNotificationsCount > 0) {
+                            Badge {
+                                Text(if (unreadNotificationsCount > 99) "99+" else unreadNotificationsCount.toString())
+                            }
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isNotifications) Icons.Filled.Notifications else Icons.Outlined.Notifications,
+                        contentDescription = "Notifications"
+                    )
+                }
             },
-            label = { Text("Alerts") },
+            label = { Text(stringResource(R.string.nav_alerts)) },
             modifier = Modifier.testTag("nav_notifications")
         )
         NavigationBarItem(
@@ -93,7 +106,7 @@ fun BottomNavigationBar(
                     contentDescription = "Profile"
                 )
             },
-            label = { Text("Profile") },
+            label = { Text(stringResource(R.string.nav_profile)) },
             modifier = Modifier.testTag("nav_profile")
         )
     }

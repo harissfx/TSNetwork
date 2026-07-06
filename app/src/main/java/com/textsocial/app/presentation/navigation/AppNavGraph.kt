@@ -20,6 +20,15 @@ fun AppNavGraph(
     val storyViewModel: StoryViewModel = viewModel { StoryViewModel() }
     val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
 
+    // ViewModel milik tab-tab utama (Home/Search/CreatePost/Notifications/Profile) yang
+    // dulunya dibuat ulang tiap kali route-nya dimasuki, sekarang dibuat sekali di sini
+    // supaya tetap hidup selama MainScreen (HorizontalPager) tampil, mirip homeViewModel.
+    val mainTabViewModel: MainTabViewModel = viewModel { MainTabViewModel() }
+    val badgeViewModel: BadgeViewModel = viewModel { BadgeViewModel() }
+    val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel() }
+    val notificationViewModel: NotificationViewModel = viewModel { NotificationViewModel() }
+    val searchViewModel: SearchViewModel = viewModel { SearchViewModel() }
+
     NavHost(
         navController = navController,
         startDestination = Routes.SPLASH
@@ -29,7 +38,7 @@ fun AppNavGraph(
             SplashScreen(
                 viewModel = splashViewModel,
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
+                    navController.navigate(Routes.MAIN) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 },
@@ -46,7 +55,7 @@ fun AppNavGraph(
             LoginScreen(
                 viewModel = loginViewModel,
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
+                    navController.navigate(Routes.MAIN) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
                 },
@@ -61,7 +70,7 @@ fun AppNavGraph(
             RegisterScreen(
                 viewModel = registerViewModel,
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
+                    navController.navigate(Routes.MAIN) {
                         popUpTo(Routes.REGISTER) { inclusive = true }
                     }
                 },
@@ -73,46 +82,44 @@ fun AppNavGraph(
             )
         }
 
-        composable(Routes.HOME) {
-            HomeScreen(
+        // MAIN: satu destination yang membungkus 5 tab utama (Home, Search, Create Post,
+        // Notifications, Profile) di dalam HorizontalPager, supaya bisa pindah tab dengan
+        // geser kiri/kanan selain lewat BottomNavigationBar.
+        composable(Routes.MAIN) {
+            MainScreen(
+                mainTabViewModel = mainTabViewModel,
+                badgeViewModel = badgeViewModel,
                 homeViewModel = homeViewModel,
                 storyViewModel = storyViewModel,
-                onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
+                profileViewModel = profileViewModel,
+                createPostViewModel = createPostViewModel,
+                notificationViewModel = notificationViewModel,
+                searchViewModel = searchViewModel,
                 onNavigateToPostDetail = { postId -> navController.navigate(Routes.postDetail(postId)) },
                 onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
                 onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) },
                 onNavigateToCreateStory = { navController.navigate(Routes.CREATE_STORY) },
-                onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
                 onNavigateToDMs = { navController.navigate(Routes.DM_LIST) },
-                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) }
-            )
-        }
-
-        composable(Routes.CREATE_POST) {
-            val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel() }
-            CreatePostScreen(
-                viewModel = createPostViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToHome = {
-                    homeViewModel.loadPosts()
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                },
-                onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
-                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) }
+                onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
+                onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                onNavigateToPostDetailFromNotif = { postId, commentId -> navController.navigate(Routes.postDetail(postId, commentId)) }
             )
         }
 
         composable(
             route = Routes.POST_DETAIL,
-            arguments = listOf(navArgument("postId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("postId") { type = NavType.StringType },
+                navArgument("commentId") { type = NavType.StringType; nullable = true; defaultValue = null }
+            )
         ) { backStackEntry ->
             val postId = backStackEntry.arguments?.getString("postId") ?: ""
+            val highlightCommentId = backStackEntry.arguments?.getString("commentId")
             val postDetailViewModel: PostDetailViewModel = viewModel { PostDetailViewModel(homeViewModel) }
             PostDetailScreen(
                 postId = postId,
+                highlightCommentId = highlightCommentId,
                 viewModel = postDetailViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
@@ -145,15 +152,29 @@ fun AppNavGraph(
                 onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
                 onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
                 onNavigateToPostDetail = { pid -> navController.navigate(Routes.postDetail(pid)) },
+                // Layar profil ini dibuka di atas MainScreen (mis. tap avatar orang lain).
+                // Kalau user tap ikon bottom nav di sini, kita pop balik ke MainScreen lalu
+                // pindahkan pager-nya ke tab yang sesuai.
                 onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
+                    mainTabViewModel.goToTab(0)
+                    navController.popBackStack(Routes.MAIN, inclusive = false)
                 },
-                onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
-                onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
-                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) },
+                onNavigateToSearch = {
+                    mainTabViewModel.goToTab(1)
+                    navController.popBackStack(Routes.MAIN, inclusive = false)
+                },
+                onNavigateToCreatePost = {
+                    mainTabViewModel.goToTab(2)
+                    navController.popBackStack(Routes.MAIN, inclusive = false)
+                },
+                onNavigateToNotifications = {
+                    mainTabViewModel.goToTab(3)
+                    navController.popBackStack(Routes.MAIN, inclusive = false)
+                },
+                onNavigateToProfileMe = {
+                    mainTabViewModel.goToTab(4)
+                    navController.popBackStack(Routes.MAIN, inclusive = false)
+                },
                 onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
@@ -189,48 +210,8 @@ fun AppNavGraph(
                 otherUsername = uname,
                 viewModel = dmChatViewModel,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
-            )
-        }
-
-        composable(Routes.NOTIFICATIONS) {
-            val notificationViewModel: NotificationViewModel = viewModel { NotificationViewModel() }
-            NotificationScreen(
-                viewModel = notificationViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                },
-                onNavigateToSearch = { navController.navigate(Routes.SEARCH) },
-                onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) },
                 onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
-                onNavigateToPostDetail = { postId -> navController.navigate(Routes.postDetail(postId)) }
-            )
-        }
-
-        composable(Routes.SEARCH) { backStackEntry ->
-            val searchViewModel: SearchViewModel = viewModel { SearchViewModel() }
-            SearchScreen(
-                viewModel = searchViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToProfile = { uid -> navController.navigate(Routes.profile(uid)) },
-                onSearchHashtag = { tag ->
-                    homeViewModel.loadPosts(tag)
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                },
-                onNavigateToHome = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
-                },
-                onNavigateToCreatePost = { navController.navigate(Routes.CREATE_POST) },
-                onNavigateToNotifications = { navController.navigate(Routes.NOTIFICATIONS) },
-                onNavigateToProfileMe = { navController.navigate(Routes.profile("me_id")) }
+                onMessagesRead = { badgeViewModel.refreshUnreadMessages() }
             )
         }
 
@@ -239,7 +220,7 @@ fun AppNavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onLogoutSuccess = {
                     navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.HOME) { inclusive = true }
+                        popUpTo(Routes.MAIN) { inclusive = true }
                     }
                 }
             )
