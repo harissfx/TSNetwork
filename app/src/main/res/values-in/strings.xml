@@ -135,4 +135,8 @@
     <string name="dm_kosongdesc">Buka profil untuk mulai mengirim pesan</string>
     <string name="feed_kosong">Belum ada postingan. Jadilah yang pertama membagikannya!</string>
     <string name="prof_kosong">Belum ada kiriman yang dibagikan oleh pengguna ini.</string>
+    <string name="notification_channel_general_name">Notifikasi umum</string>
+    <string name="notification_channel_general_desc">Like, komentar, follow, dan aktivitas lainnya</string>
+    <string name="notification_channel_messages_name">Pesan</string>
+    <string name="notification_channel_messages_desc">Pesan langsung baru</string>
 </resources>

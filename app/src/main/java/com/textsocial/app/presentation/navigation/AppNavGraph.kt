@@ -1,20 +1,30 @@
 package com.textsocial.app.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.textsocial.app.presentation.screens.*
 import com.textsocial.app.presentation.viewmodel.*
 
+/**
+ * @param pendingDeepLinkRoute A route to navigate to as soon as the user lands on [Routes.MAIN]
+ * (e.g. built from a tapped push notification's extras). Consumed once via [onDeepLinkConsumed]
+ * so it isn't re-triggered on configuration changes or back navigation.
+ */
 @Composable
 fun AppNavGraph(
-    navController: NavHostController = rememberNavController()
+    navController: NavHostController = rememberNavController(),
+    pendingDeepLinkRoute: String? = null,
+    onDeepLinkConsumed: () -> Unit = {}
 ) {
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel() }
     val storyViewModel: StoryViewModel = viewModel { StoryViewModel() }
@@ -24,6 +34,14 @@ fun AppNavGraph(
     val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel(homeViewModel) }
     val notificationViewModel: NotificationViewModel = viewModel { NotificationViewModel() }
     val searchViewModel: SearchViewModel = viewModel { SearchViewModel() }
+
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    LaunchedEffect(pendingDeepLinkRoute, currentBackStackEntry) {
+        if (pendingDeepLinkRoute != null && currentBackStackEntry?.destination?.route == Routes.MAIN) {
+            navController.navigate(pendingDeepLinkRoute)
+            onDeepLinkConsumed()
+        }
+    }
 
     NavHost(
         navController = navController,

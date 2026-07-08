@@ -117,6 +117,7 @@ class LoginViewModel : ViewModel() {
             _isLoading.value = false
             if (result.isSuccess) {
                 _loginSuccess.value = true
+                com.textsocial.app.util.PushNotificationManager.registerCurrentDeviceToken()
             } else {
                 val exception = result.exceptionOrNull()
                 if (exception is SupabaseAuthException) {
@@ -194,6 +195,7 @@ class RegisterViewModel : ViewModel() {
             _isLoading.value = false
             if (result.isSuccess) {
                 _registerSuccess.value = true
+                com.textsocial.app.util.PushNotificationManager.registerCurrentDeviceToken()
             } else {
                 val exception = result.exceptionOrNull()
                 if (exception is SupabaseAuthException) {

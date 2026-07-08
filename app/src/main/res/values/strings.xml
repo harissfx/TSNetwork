@@ -135,4 +135,8 @@
     <string name="dm_kosongdesc">Navigate to profiles to start messaging</string>
     <string name="feed_kosong">No posts found yet. Be the first to share!</string>
     <string name="prof_kosong">No posts shared by this user yet.</string>
+    <string name="notification_channel_general_name">General notifications</string>
+    <string name="notification_channel_general_desc">Likes, comments, follows, and other activity</string>
+    <string name="notification_channel_messages_name">Messages</string>
+    <string name="notification_channel_messages_desc">New direct messages</string>
 </resources>

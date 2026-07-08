@@ -3,6 +3,7 @@ plugins {
   alias(libs.plugins.kotlin.android)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
+  alias(libs.plugins.google.services)
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
 }
@@ -71,7 +72,8 @@ dependencies {
   // androidx.multidex dihapus -- minSdk 24 sudah didukung native multidex oleh ART,
   // dan App.kt sudah tidak lagi extends MultiDexApplication.
   implementation(platform(libs.androidx.compose.bom))
-  // implementation(platform(libs.firebase.bom))
+  implementation(platform(libs.firebase.bom))
+  implementation(libs.firebase.messaging)
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)

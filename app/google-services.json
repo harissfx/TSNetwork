@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "713604431848",
+    "project_id": "opentext-97a55",
+    "storage_bucket": "opentext-97a55.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713604431848:android:ce818ed02ab67c16322e5d",
+        "android_client_info": {
+          "package_name": "com.textsocial.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYh-aLAYGrZiFwUf6acZeHzfurJVzJuPI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

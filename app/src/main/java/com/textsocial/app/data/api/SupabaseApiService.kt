@@ -265,4 +265,20 @@ interface SupabaseApiService {
     suspend fun deleteNotifications(
         @Query("id") filter: String
     ): Response<Void>
+
+    // Registers/updates this device's FCM token so the backend can push notifications
+    // to it even when the app is closed. `on_conflict=fcm_token` makes this idempotent:
+    // re-registering the same token (e.g. every app start) just refreshes the owner/timestamp.
+    @POST("rest/v1/device_tokens?on_conflict=fcm_token")
+    suspend fun upsertDeviceToken(
+        @Body request: UpsertDeviceTokenRequest,
+        @Header("Prefer") prefer: String = "resolution=merge-duplicates,return=minimal"
+    ): Response<Void>
+
+    // Called on logout so a shared/reused device stops receiving pushes for the account
+    // that just signed out.
+    @DELETE("rest/v1/device_tokens")
+    suspend fun deleteDeviceToken(
+        @Query("fcm_token") tokenFilter: String
+    ): Response<Void>
 }

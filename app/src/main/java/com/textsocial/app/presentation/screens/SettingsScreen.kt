@@ -321,6 +321,7 @@ fun SettingsScreen(
 
                 Button(
                     onClick = {
+                        com.textsocial.app.util.PushNotificationManager.unregisterCurrentDeviceToken()
                         coroutineScope.launch {
                             ServiceLocator.authRepository.logout()
                             onLogoutSuccess()

@@ -1315,4 +1315,27 @@ class UserRepositoryImpl(
             Result.success(emptyList())
         }
     }
+
+    override suspend fun registerDeviceToken(fcmToken: String): Result<Unit> {
+        return try {
+            val userId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val response = apiService.upsertDeviceToken(
+                UpsertDeviceTokenRequest(user_id = userId, fcm_token = fcmToken)
+            )
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Failed to register device token: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun unregisterDeviceToken(fcmToken: String): Result<Unit> {
+        return try {
+            val response = apiService.deleteDeviceToken("eq.$fcmToken")
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Failed to unregister device token: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

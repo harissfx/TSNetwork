@@ -280,6 +280,13 @@ data class CreateNotificationRequest(
 )
 
 @JsonClass(generateAdapter = true)
+data class UpsertDeviceTokenRequest(
+    val user_id: String,
+    val fcm_token: String,
+    val platform: String = "android"
+)
+
+@JsonClass(generateAdapter = true)
 data class ConversationDto(
     val id: String,
     val user1_id: String,
