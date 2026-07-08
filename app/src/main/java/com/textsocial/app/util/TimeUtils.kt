@@ -10,6 +10,24 @@ import java.util.concurrent.TimeUnit
 
 object TimeUtils {
 
+    /**
+     * ISO-8601 timestamp for "right now", used only to stamp optimistic
+     * (locally-created, not-yet-confirmed-by-server) entities such as a post,
+     * comment, story, or message that was just created client-side.
+     */
+    fun nowIso(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(Date())
+    }
+
+    /** Same as [nowIso] but offset into the future, used e.g. to stamp an optimistic story's expiry. */
+    fun isoPlusHours(hours: Int): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+        sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return sdf.format(Date(System.currentTimeMillis() + hours * 3_600_000L))
+    }
+
     fun parseToEpochMillis(iso: String?): Long? {
         if (iso.isNullOrBlank()) return null
         val normalized = normalize(iso) ?: return null

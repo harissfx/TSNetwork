@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
@@ -228,7 +229,11 @@ fun DMChatScreen(
                         ) {
                             Box {
                                 Surface(
-                                    color = if (isMyMessage) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                                    color = when {
+                                        msg.isFailed -> MaterialTheme.colorScheme.errorContainer
+                                        isMyMessage -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.secondaryContainer
+                                    },
                                     shape = RoundedCornerShape(
                                         topStart = 16.dp,
                                         topEnd = 16.dp,
@@ -237,11 +242,16 @@ fun DMChatScreen(
                                     ),
                                     modifier = Modifier
                                         .widthIn(max = 280.dp)
+                                        .alpha(if (msg.isPending) 0.6f else 1f)
                                         .combinedClickable(
-                                            onClick = {},
+                                            onClick = {
+                                                if (msg.isFailed) viewModel.retryMessage(msg)
+                                            },
                                             onLongClick = {
-
-                                                if (isMyMessage && !msg.isDeleted) {
+                                                if (msg.isFailed) {
+                                                    messageForDeleteMenu = null
+                                                    viewModel.discardFailedMessage(msg.id)
+                                                } else if (isMyMessage && !msg.isDeleted && !msg.isPending) {
                                                     messageForDeleteMenu = msg.id
                                                 }
                                             }
@@ -249,7 +259,13 @@ fun DMChatScreen(
                                 ) {
                                     Text(
                                         text = if (msg.isDeleted) stringResource(R.string.pesan_dihapus) else msg.text,
-                                        color = if (isMyMessage) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
+                                        color = if (msg.isFailed) {
+                                            MaterialTheme.colorScheme.onErrorContainer
+                                        } else if (isMyMessage) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        },
                                         fontSize = 14.sp,
                                         fontStyle = if (msg.isDeleted) FontStyle.Italic else FontStyle.Normal,
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
@@ -270,13 +286,14 @@ fun DMChatScreen(
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (isMyMessage && msg.isRead) {
-                                    "${TimeUtils.clockTime(msg.createdAt)} · Read"
-                                } else {
-                                    TimeUtils.clockTime(msg.createdAt)
+                                text = when {
+                                    msg.isFailed -> "Gagal terkirim · ketuk untuk coba lagi"
+                                    msg.isPending -> "Mengirim…"
+                                    isMyMessage && msg.isRead -> "${TimeUtils.clockTime(msg.createdAt)} · Read"
+                                    else -> TimeUtils.clockTime(msg.createdAt)
                                 },
                                 fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.outline,
+                                color = if (msg.isFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
                                 modifier = Modifier.padding(horizontal = 4.dp)
                             )
                         }

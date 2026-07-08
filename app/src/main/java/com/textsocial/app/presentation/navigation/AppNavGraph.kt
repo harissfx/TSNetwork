@@ -21,7 +21,7 @@ fun AppNavGraph(
     val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
     val mainTabViewModel: MainTabViewModel = viewModel { MainTabViewModel() }
     val badgeViewModel: BadgeViewModel = viewModel { BadgeViewModel() }
-    val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel() }
+    val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel(homeViewModel) }
     val notificationViewModel: NotificationViewModel = viewModel { NotificationViewModel() }
     val searchViewModel: SearchViewModel = viewModel { SearchViewModel() }
 

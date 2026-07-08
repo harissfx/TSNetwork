@@ -68,7 +68,26 @@ fun HomeScreen(
     val activeHashtag by homeViewModel.activeHashtag.collectAsState()
     val feedMode by homeViewModel.feedMode.collectAsState()
     val stories by storyViewModel.stories.collectAsState()
+    val actionError by homeViewModel.actionError.collectAsState()
+    val storyActionError by storyViewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            homeViewModel.clearActionError()
+        }
+    }
+
+    LaunchedEffect(storyActionError) {
+        val message = storyActionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            storyViewModel.clearActionError()
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -85,6 +104,7 @@ fun HomeScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -424,11 +444,20 @@ fun PostItem(
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.outline
                             )
-                            Text(
-                                text = " · ${com.textsocial.app.util.TimeUtils.timeAgoShort(context, post.createdAt)}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                            if (post.id.startsWith("temp-")) {
+                                Text(
+                                    text = " · Mengirim…",
+                                    fontSize = 12.sp,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            } else {
+                                Text(
+                                    text = " · ${com.textsocial.app.util.TimeUtils.timeAgoShort(context, post.createdAt)}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
                         }
                     }
                 }

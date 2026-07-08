@@ -40,13 +40,24 @@ fun FollowListScreen(
     val isLoadingFollowing by viewModel.isLoadingFollowing.collectAsState()
     val isFollowingListHidden by viewModel.isFollowingListHidden.collectAsState()
     val followActionLoadingIds by viewModel.followActionLoadingIds.collectAsState()
+    val actionError by viewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 1)) }
 
     LaunchedEffect(targetUserId) {
         viewModel.load(targetUserId)
     }
 
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearActionError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("@$targetUsername", fontWeight = FontWeight.Bold) },

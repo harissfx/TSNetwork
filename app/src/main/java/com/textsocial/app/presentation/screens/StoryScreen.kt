@@ -77,7 +77,18 @@ fun StoryScreen(
         }
     }
 
-    Scaffold { innerPadding ->
+    val actionError by viewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearActionError()
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { innerPadding ->
         val currentBackgroundColor = if (stories.isNotEmpty() && currentStoryIndex < stories.size) {
             StoryStyleOptions.parseColorOrDefault(stories[currentStoryIndex].backgroundColor, Color.Black)
         } else {

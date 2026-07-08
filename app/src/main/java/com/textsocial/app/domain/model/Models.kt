@@ -72,7 +72,13 @@ data class Message(
     val text: String,
     val createdAt: String,
     val isRead: Boolean,
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    // Optimistic-UI-only fields (never come from the server): a message that was
+    // added locally right after the user hit "send", before the API call resolves.
+    val isPending: Boolean = false,
+    // Optimistic-UI-only: set when the send request failed, so the bubble can show
+    // a retry affordance instead of silently disappearing.
+    val isFailed: Boolean = false
 ) : Serializable
 
 data class Conversation(

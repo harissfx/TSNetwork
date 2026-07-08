@@ -241,6 +241,52 @@ class HomeViewModel : ViewModel() {
     private val _feedMode = MutableStateFlow(FeedMode.FOR_YOU)
     val feedMode = _feedMode.asStateFlow()
 
+    // Optimistic-UI: transient, user-facing message shown (e.g. via Snackbar) when an
+    // optimistic action (like, delete, publish) had to be rolled back because the
+    // server call failed. Screens should clear it after displaying it once.
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
+
+    fun reportActionError(message: String) {
+        _actionError.value = message
+    }
+
+    /** Prepends a locally-built post (not yet confirmed by the server) to the feed. */
+    fun insertOptimisticPost(post: Post) {
+        _rawPosts.update { listOf(post) + it }
+        _posts.update { listOf(post) + it }
+    }
+
+    /** Removes a post (used to roll back an optimistic insert that failed, or a delete). */
+    fun removePostById(postId: String) {
+        _rawPosts.update { current -> current.filterNot { it.id == postId } }
+        _posts.update { current -> current.filterNot { it.id == postId } }
+    }
+
+    /** Mirrors a like/unlike state change made from another screen (e.g. Profile) into the feed. */
+    fun applyLikeStateToPost(postId: String, isLiked: Boolean, likesCount: Int) {
+        fun apply(list: List<Post>): List<Post> = list.map {
+            if (it.id == postId) it.copy(isLiked = isLiked, likesCount = likesCount) else it
+        }
+        _rawPosts.update(::apply)
+        _posts.update(::apply)
+    }
+
+    /** Re-inserts a post at its original position (used to roll back a failed delete). */
+    fun restorePost(post: Post, atIndex: Int) {
+        fun reinsert(list: List<Post>): List<Post> {
+            if (list.any { it.id == post.id }) return list
+            val idx = atIndex.coerceIn(0, list.size)
+            return list.toMutableList().apply { add(idx, post) }
+        }
+        _rawPosts.update(::reinsert)
+        _posts.update(::reinsert)
+    }
+
     init {
         loadPosts()
     }
@@ -283,44 +329,56 @@ class HomeViewModel : ViewModel() {
     }
 
     fun toggleLike(post: Post) {
+        val wasLiked = post.isLiked
+        val previousCount = post.likesCount
+
+        // 1. Update the UI immediately, before the network call even starts.
+        fun applyLocalState(list: List<Post>): List<Post> = list.map {
+            if (it.id == post.id) {
+                if (wasLiked) it.copy(likesCount = (previousCount - 1).coerceAtLeast(0), isLiked = false)
+                else it.copy(likesCount = previousCount + 1, isLiked = true)
+            } else it
+        }
+        _rawPosts.update(::applyLocalState)
+        _posts.update(::applyLocalState)
+
+        // 2. Fire the request in the background and reconcile if it fails.
         viewModelScope.launch(Dispatchers.IO) {
-            if (post.isLiked) {
-                postRepo.unlikePost(post.id)
-                val updated = { list: List<Post> ->
-                    list.map {
-                        if (it.id == post.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
-                        else it
-                    }
+            val result = if (wasLiked) postRepo.unlikePost(post.id) else postRepo.likePost(post.id)
+            if (result.isFailure) {
+                fun rollback(list: List<Post>): List<Post> = list.map {
+                    if (it.id == post.id) it.copy(likesCount = previousCount, isLiked = wasLiked) else it
                 }
-                _rawPosts.update(updated)
-                _posts.update(updated)
-            } else {
-                postRepo.likePost(post.id)
-                val updated = { list: List<Post> ->
-                    list.map {
-                        if (it.id == post.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
-                        else it
-                    }
-                }
-                _rawPosts.update(updated)
-                _posts.update(updated)
+                _rawPosts.update(::rollback)
+                _posts.update(::rollback)
+                _actionError.value = "Gagal memproses like. Coba lagi."
             }
         }
     }
 
     fun deletePost(postId: String) {
+        val currentList = _rawPosts.value
+        val index = currentList.indexOfFirst { it.id == postId }
+        if (index == -1) return
+        val removedPost = currentList[index]
+
+        // 1. Remove immediately from the UI.
+        removePostById(postId)
+
+        // 2. Confirm with the server; put the post back if it turns out it couldn't be deleted.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
-            if (result.isSuccess) {
-                _rawPosts.update { current -> current.filter { it.id != postId } }
-                _posts.update { current -> current.filter { it.id != postId } }
+            if (result.isFailure) {
+                restorePost(removedPost, index)
+                _actionError.value = "Gagal menghapus postingan. Coba lagi."
             }
         }
     }
 }
 
-class CreatePostViewModel : ViewModel() {
+class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val postRepo = ServiceLocator.postRepository
+    private val prefs = ServiceLocator.encryptedPreferencesManager
 
     private val _text = MutableStateFlow("")
     val text = _text.asStateFlow()
@@ -334,24 +392,56 @@ class CreatePostViewModel : ViewModel() {
     private val _isFinished = MutableStateFlow(false)
     val isFinished = _isFinished.asStateFlow()
 
+    private var isSubmitting = false
+
     fun onTextChange(value: String) {
         if (value.length <= 500) {
             _text.value = value
         }
     }
 
+    /**
+     * Optimistic publish: the post shows up at the top of the home feed and the
+     * composer closes immediately, as if publishing already succeeded. The actual
+     * network call happens in the background; if it fails, the optimistic post is
+     * pulled back out of the feed and an error is surfaced there.
+     */
     fun createPost() {
-        if (_text.value.isBlank()) return
+        val text = _text.value
+        if (text.isBlank() || isSubmitting) return
+        isSubmitting = true
+
+        val myId = com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "me_id"
+        val myUsername = prefs.getUsername() ?: "you"
+        val tempPost = Post(
+            id = "temp-${java.util.UUID.randomUUID()}",
+            userId = myId,
+            username = myUsername,
+            displayName = myUsername,
+            userAvatarColor = prefs.getUserAvatarColor(),
+            text = text,
+            createdAt = com.textsocial.app.util.TimeUtils.nowIso(),
+            likesCount = 0,
+            commentsCount = 0,
+            isLiked = false
+        )
+
+        homeViewModel.insertOptimisticPost(tempPost)
+        _text.value = ""
+        _isFinished.value = true
+
         viewModelScope.launch(Dispatchers.IO) {
-            _isLoading.value = true
-            _error.value = null
-            val result = postRepo.createPost(_text.value)
-            _isLoading.value = false
+            val result = postRepo.createPost(text)
             if (result.isSuccess) {
-                _isFinished.value = true
+                homeViewModel.removePostById(tempPost.id)
+                homeViewModel.loadPosts()
             } else {
-                _error.value = result.exceptionOrNull()?.message ?: "Failed to publish post"
+                homeViewModel.removePostById(tempPost.id)
+                homeViewModel.reportActionError(
+                    result.exceptionOrNull()?.message ?: "Gagal memposting. Coba lagi."
+                )
             }
+            isSubmitting = false
         }
     }
 }
@@ -373,6 +463,13 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
 
     fun setPost(postId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -412,61 +509,93 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         val text = _commentText.value
         if (text.isBlank()) return
         val parentId = _replyingTo.value?.id
+        val prefs = ServiceLocator.encryptedPreferencesManager
+        val myId = prefs.getUserId() ?: "me_id"
+        val myUsername = prefs.getUsername() ?: "you"
 
+        // 1. Show the comment immediately and clear the composer, as if it were already sent.
+        val tempComment = Comment(
+            id = "temp-${java.util.UUID.randomUUID()}",
+            postId = currentPost.id,
+            userId = myId,
+            username = myUsername,
+            displayName = myUsername,
+            text = text,
+            createdAt = com.textsocial.app.util.TimeUtils.nowIso(),
+            avatarColor = prefs.getUserAvatarColor(),
+            parentId = parentId
+        )
+        _comments.update { it + tempComment }
+        _post.update { it?.copy(commentsCount = it.commentsCount + 1) }
+        _commentText.value = ""
+        _replyingTo.value = null
+
+        // 2. Confirm with the server; reconcile the temp comment with the real one, or roll back.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.createComment(currentPost.id, text, parentId)
             if (result.isSuccess) {
-                _commentText.value = ""
-                _replyingTo.value = null
                 val commentsResult = postRepo.getComments(currentPost.id)
                 if (commentsResult.isSuccess) {
                     _comments.value = commentsResult.getOrDefault(emptyList())
                 }
-                _post.update { it?.copy(commentsCount = it.commentsCount + 1) }
+            } else {
+                _comments.update { list -> list.filterNot { it.id == tempComment.id } }
+                _post.update { it?.copy(commentsCount = (it.commentsCount - 1).coerceAtLeast(0)) }
+                _actionError.value = "Gagal mengirim komentar. Coba lagi."
             }
         }
     }
 
     fun toggleCommentLike(comment: Comment) {
+        val wasLiked = comment.isLiked
+        val previousCount = comment.likesCount
+
+        fun applyLocalState(list: List<Comment>): List<Comment> = list.map {
+            if (it.id == comment.id) {
+                if (wasLiked) it.copy(likesCount = (previousCount - 1).coerceAtLeast(0), isLiked = false)
+                else it.copy(likesCount = previousCount + 1, isLiked = true)
+            } else it
+        }
+        _comments.update(::applyLocalState)
+
         viewModelScope.launch(Dispatchers.IO) {
-            if (comment.isLiked) {
-                postRepo.unlikeComment(comment.id)
-                _comments.update { current ->
-                    current.map {
-                        if (it.id == comment.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
-                        else it
-                    }
+            val result = if (wasLiked) postRepo.unlikeComment(comment.id) else postRepo.likeComment(comment.id)
+            if (result.isFailure) {
+                _comments.update { list ->
+                    list.map { if (it.id == comment.id) it.copy(likesCount = previousCount, isLiked = wasLiked) else it }
                 }
-            } else {
-                postRepo.likeComment(comment.id)
-                _comments.update { current ->
-                    current.map {
-                        if (it.id == comment.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
-                        else it
-                    }
-                }
+                _actionError.value = "Gagal memproses like komentar. Coba lagi."
             }
         }
     }
 
     fun deleteComment(commentId: String) {
         val currentPost = _post.value ?: return
+        val previousComments = _comments.value
+        val previousCommentsCount = currentPost.commentsCount
+
+        val idsToRemove = mutableSetOf(commentId)
+        var changed = true
+        while (changed) {
+            changed = false
+            for (c in previousComments) {
+                if (c.parentId != null && idsToRemove.contains(c.parentId) && idsToRemove.add(c.id)) {
+                    changed = true
+                }
+            }
+        }
+
+        // 1. Remove immediately (including any replies to the removed comment).
+        _comments.value = previousComments.filter { it.id !in idsToRemove }
+        _post.update { it?.copy(commentsCount = (it.commentsCount - idsToRemove.size).coerceAtLeast(0)) }
+
+        // 2. Confirm with the server; restore everything if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deleteComment(commentId)
-            if (result.isSuccess) {
-                val current = _comments.value
-                val idsToRemove = mutableSetOf(commentId)
-                var changed = true
-                while (changed) {
-                    changed = false
-                    for (c in current) {
-                        if (c.parentId != null && idsToRemove.contains(c.parentId) && idsToRemove.add(c.id)) {
-                            changed = true
-                        }
-                    }
-                }
-                _comments.value = current.filter { it.id !in idsToRemove }
-                _post.update { it?.copy(commentsCount = (it.commentsCount - idsToRemove.size).coerceAtLeast(0)) }
+            if (result.isFailure) {
+                _comments.value = previousComments
+                _post.update { it?.copy(commentsCount = previousCommentsCount) }
+                _actionError.value = "Gagal menghapus komentar. Coba lagi."
             }
         }
     }
@@ -512,6 +641,13 @@ class StoryViewModel : ViewModel() {
     private val _selectedStoryIndex = MutableStateFlow(0)
     val selectedStoryIndex = _selectedStoryIndex.asStateFlow()
 
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
+
     fun setSelectedStoryIndex(index: Int) {
         _selectedStoryIndex.value = index
     }
@@ -555,18 +691,43 @@ class StoryViewModel : ViewModel() {
 
     fun createStory() {
         if (_storyText.value.isBlank()) return
+        val prefs = ServiceLocator.encryptedPreferencesManager
+        val myId = prefs.getUserId() ?: "me_id"
+        val myUsername = prefs.getUsername() ?: "you"
+        val tempStory = Story(
+            id = "temp-${java.util.UUID.randomUUID()}",
+            userId = myId,
+            username = myUsername,
+            text = _storyText.value,
+            createdAt = com.textsocial.app.util.TimeUtils.nowIso(),
+            expiresAt = com.textsocial.app.util.TimeUtils.isoPlusHours(24),
+            avatarColor = prefs.getUserAvatarColor(),
+            backgroundColor = _storyBackgroundColor.value,
+            textColor = _storyTextColor.value,
+            fontFamily = _storyFontFamily.value
+        )
+
+        // 1. Show it right away and close the composer, as if it were already posted.
+        _stories.update { listOf(tempStory) + it }
+        val text = _storyText.value
+        val backgroundColor = _storyBackgroundColor.value
+        val textColor = _storyTextColor.value
+        val fontFamily = _storyFontFamily.value
+        _isFinished.value = true
+
+        // 2. Confirm with the server; reconcile on success, roll back on failure.
         viewModelScope.launch(Dispatchers.IO) {
-            _isLoading.value = true
             val result = storyRepo.createStory(
-                text = _storyText.value,
-                backgroundColor = _storyBackgroundColor.value,
-                textColor = _storyTextColor.value,
-                fontFamily = _storyFontFamily.value
+                text = text,
+                backgroundColor = backgroundColor,
+                textColor = textColor,
+                fontFamily = fontFamily
             )
-            _isLoading.value = false
             if (result.isSuccess) {
-                _isFinished.value = true
                 loadStories()
+            } else {
+                _stories.update { current -> current.filterNot { it.id == tempStory.id } }
+                _actionError.value = "Gagal membuat story. Coba lagi."
             }
         }
     }
@@ -579,10 +740,23 @@ class StoryViewModel : ViewModel() {
     }
 
     fun deleteStory(storyId: String) {
+        val currentList = _stories.value
+        val index = currentList.indexOfFirst { it.id == storyId }
+        if (index == -1) return
+        val removedStory = currentList[index]
+
+        // 1. Remove immediately.
+        _stories.update { it.filterNot { s -> s.id == storyId } }
+
+        // 2. Confirm with the server; put it back if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = storyRepo.deleteStory(storyId)
-            if (result.isSuccess) {
-                _stories.update { current -> current.filter { it.id != storyId } }
+            if (result.isFailure) {
+                _stories.update { current ->
+                    if (current.any { it.id == storyId }) current
+                    else current.toMutableList().apply { add(index.coerceIn(0, size), removedStory) }
+                }
+                _actionError.value = "Gagal menghapus story. Coba lagi."
             }
         }
     }
@@ -614,9 +788,27 @@ class DMListViewModel : ViewModel() {
 class DMChatViewModel : ViewModel() {
     private val msgRepo = ServiceLocator.messageRepository
     private val userRepo = ServiceLocator.userRepository
+    private val prefs = ServiceLocator.encryptedPreferencesManager
 
-    private val _messages = MutableStateFlow<List<Message>>(emptyList())
-    val messages = _messages.asStateFlow()
+    // Messages confirmed by the server (via initial fetch + realtime updates).
+    private val _serverMessages = MutableStateFlow<List<Message>>(emptyList())
+
+    // Optimistic-only messages: appended locally the instant "send" is tapped, before
+    // the network call resolves. Each carries isPending=true until confirmed, or
+    // isFailed=true if the send failed (so the bubble can offer a retry).
+    private val _pendingMessages = MutableStateFlow<List<Message>>(emptyList())
+
+    // IDs currently being optimistically shown as deleted, ahead of server confirmation.
+    private val _pendingDeleteIds = MutableStateFlow<Set<String>>(emptySet())
+
+    val messages: StateFlow<List<Message>> = combine(
+        _serverMessages, _pendingMessages, _pendingDeleteIds
+    ) { server, pending, pendingDeletes ->
+        val mergedServer = server.map {
+            if (pendingDeletes.contains(it.id)) it.copy(text = "Pesan ini telah dihapus", isDeleted = true) else it
+        }
+        (mergedServer + pending).sortedBy { com.textsocial.app.util.TimeUtils.parseToEpochMillis(it.createdAt) ?: 0L }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _messageText = MutableStateFlow("")
     val messageText = _messageText.asStateFlow()
@@ -646,14 +838,14 @@ class DMChatViewModel : ViewModel() {
 
             val result = msgRepo.getMessages(targetUserId)
             if (result.isSuccess) {
-                _messages.value = result.getOrDefault(emptyList())
+                _serverMessages.value = result.getOrDefault(emptyList())
             }
 
             msgRepo.markMessagesAsRead(targetUserId)
             onMessagesRead()
 
             msgRepo.observeMessages(targetUserId).collect { list ->
-                _messages.value = list
+                _serverMessages.value = list
             }
         }
     }
@@ -669,13 +861,58 @@ class DMChatViewModel : ViewModel() {
         _messageText.value = ""
         _sendError.value = null
 
+        val myId = prefs.getUserId() ?: "me_id"
+        val tempMessage = Message(
+            id = "temp-${java.util.UUID.randomUUID()}",
+            conversationId = "",
+            senderId = myId,
+            text = text,
+            createdAt = com.textsocial.app.util.TimeUtils.nowIso(),
+            isRead = false,
+            isPending = true
+        )
+
+        // 1. Show the bubble immediately, before the request even goes out.
+        _pendingMessages.update { it + tempMessage }
+
+        // 2. Send in the background; drop the temp bubble once the real one arrives via
+        //    the server flow, or mark it failed (with a retry affordance) if it didn't go through.
         viewModelScope.launch(Dispatchers.IO) {
             val result = msgRepo.sendMessage(targetUserId, text)
-            if (result.isFailure) {
-                _messageText.value = text
-                _sendError.value = "Pesan gagal terkirim. Coba lagi."
+            if (result.isSuccess) {
+                _pendingMessages.update { list -> list.filterNot { it.id == tempMessage.id } }
+            } else {
+                _pendingMessages.update { list ->
+                    list.map { if (it.id == tempMessage.id) it.copy(isPending = false, isFailed = true) else it }
+                }
+                _sendError.value = "Pesan gagal terkirim. Ketuk pesan untuk mencoba lagi."
             }
         }
+    }
+
+    /** Retries a bubble that previously failed to send. */
+    fun retryMessage(message: Message) {
+        if (!message.isFailed) return
+        _pendingMessages.update { list ->
+            list.map { if (it.id == message.id) it.copy(isPending = true, isFailed = false) else it }
+        }
+        _sendError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = msgRepo.sendMessage(targetUserId, message.text)
+            if (result.isSuccess) {
+                _pendingMessages.update { list -> list.filterNot { it.id == message.id } }
+            } else {
+                _pendingMessages.update { list ->
+                    list.map { if (it.id == message.id) it.copy(isPending = false, isFailed = true) else it }
+                }
+                _sendError.value = "Pesan gagal terkirim. Ketuk pesan untuk mencoba lagi."
+            }
+        }
+    }
+
+    /** Discards a bubble that failed to send, without retrying. */
+    fun discardFailedMessage(messageId: String) {
+        _pendingMessages.update { list -> list.filterNot { it.id == messageId } }
     }
 
     fun dismissSendError() {
@@ -684,11 +921,21 @@ class DMChatViewModel : ViewModel() {
 
     fun deleteMessage(messageId: String) {
         if (targetUserId.isEmpty()) return
+
+        // 1. Show it as deleted immediately.
+        _pendingDeleteIds.update { it + messageId }
+
+        // 2. Confirm with the server; undo the optimistic delete if it failed.
         viewModelScope.launch(Dispatchers.IO) {
-            msgRepo.deleteMessageForEveryone(targetUserId, messageId)
+            val result = msgRepo.deleteMessageForEveryone(targetUserId, messageId)
+            if (result.isFailure) {
+                _pendingDeleteIds.update { it - messageId }
+                _sendError.value = "Gagal menghapus pesan. Coba lagi."
+            }
         }
     }
 }
+
 
 class NotificationViewModel : ViewModel() {
     private val userRepo = ServiceLocator.userRepository
@@ -704,6 +951,13 @@ class NotificationViewModel : ViewModel() {
 
     private val _selectedIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedIds = _selectedIds.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
 
     init {
         loadNotifications()
@@ -725,23 +979,47 @@ class NotificationViewModel : ViewModel() {
         }
         onMarked()
         viewModelScope.launch(Dispatchers.IO) {
-            userRepo.markNotificationAsRead(notification.id)
+            val result = userRepo.markNotificationAsRead(notification.id)
+            if (result.isFailure) {
+                _notifications.update { list ->
+                    list.map { if (it.id == notification.id) it.copy(isRead = false) else it }
+                }
+                _actionError.value = "Gagal menandai sebagai dibaca."
+            }
         }
     }
 
     fun markAllAsRead(onMarked: () -> Unit = {}) {
         if (_notifications.value.none { !it.isRead }) return
+        val previousUnreadIds = _notifications.value.filterNot { it.isRead }.map { it.id }.toSet()
         _notifications.value = _notifications.value.map { it.copy(isRead = true) }
         onMarked()
         viewModelScope.launch(Dispatchers.IO) {
-            userRepo.markNotificationsAsRead()
+            val result = userRepo.markNotificationsAsRead()
+            if (result.isFailure) {
+                _notifications.update { list ->
+                    list.map { if (previousUnreadIds.contains(it.id)) it.copy(isRead = false) else it }
+                }
+                _actionError.value = "Gagal menandai semua sebagai dibaca."
+            }
         }
     }
 
     fun deleteNotification(notificationId: String) {
+        val previousList = _notifications.value
+        val index = previousList.indexOfFirst { it.id == notificationId }
+        if (index == -1) return
+        val removed = previousList[index]
         _notifications.update { list -> list.filterNot { it.id == notificationId } }
         viewModelScope.launch(Dispatchers.IO) {
-            userRepo.deleteNotification(notificationId)
+            val result = userRepo.deleteNotification(notificationId)
+            if (result.isFailure) {
+                _notifications.update { current ->
+                    if (current.any { it.id == notificationId }) current
+                    else current.toMutableList().apply { add(index.coerceIn(0, size), removed) }
+                }
+                _actionError.value = "Gagal menghapus notifikasi."
+            }
         }
     }
 
@@ -772,11 +1050,20 @@ class NotificationViewModel : ViewModel() {
     fun deleteSelected() {
         val ids = _selectedIds.value
         if (ids.isEmpty()) return
+        val previousList = _notifications.value
+        val removedInOrder = previousList.filter { ids.contains(it.id) }
         _notifications.update { list -> list.filterNot { ids.contains(it.id) } }
         _selectedIds.value = emptySet()
         _isSelectMode.value = false
         viewModelScope.launch(Dispatchers.IO) {
-            userRepo.deleteNotifications(ids.toList())
+            val result = userRepo.deleteNotifications(ids.toList())
+            if (result.isFailure) {
+                _notifications.update { current ->
+                    (current + removedInOrder.filterNot { r -> current.any { it.id == r.id } })
+                        .sortedByDescending { com.textsocial.app.util.TimeUtils.parseToEpochMillis(it.createdAt) ?: 0L }
+                }
+                _actionError.value = "Gagal menghapus notifikasi terpilih."
+            }
         }
     }
 }
@@ -871,6 +1158,13 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
 
     private val _avatarUploadError = MutableStateFlow<String?>(null)
     val avatarUploadError = _avatarUploadError.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
     fun uploadAvatar(imageBytes: ByteArray) {
         if (_isAvatarUploading.value) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -930,25 +1224,28 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     }
 
     fun toggleLike(post: Post) {
+        val wasLiked = post.isLiked
+        val previousCount = post.likesCount
+
+        fun applyLocalState(list: List<Post>): List<Post> = list.map {
+            if (it.id == post.id) {
+                if (wasLiked) it.copy(likesCount = (previousCount - 1).coerceAtLeast(0), isLiked = false)
+                else it.copy(likesCount = previousCount + 1, isLiked = true)
+            } else it
+        }
+        _posts.update(::applyLocalState)
+        homeViewModel.applyLikeStateToPost(post.id, isLiked = !wasLiked, likesCount = if (wasLiked) (previousCount - 1).coerceAtLeast(0) else previousCount + 1)
+
         viewModelScope.launch(Dispatchers.IO) {
-            if (post.isLiked) {
-                postRepo.unlikePost(post.id)
-                _posts.update { current ->
-                    current.map {
-                        if (it.id == post.id) it.copy(likesCount = (it.likesCount - 1).coerceAtLeast(0), isLiked = false)
-                        else it
-                    }
+            val result = if (wasLiked) postRepo.unlikePost(post.id) else postRepo.likePost(post.id)
+            if (result.isFailure) {
+                fun rollback(list: List<Post>): List<Post> = list.map {
+                    if (it.id == post.id) it.copy(likesCount = previousCount, isLiked = wasLiked) else it
                 }
-            } else {
-                postRepo.likePost(post.id)
-                _posts.update { current ->
-                    current.map {
-                        if (it.id == post.id) it.copy(likesCount = it.likesCount + 1, isLiked = true)
-                        else it
-                    }
-                }
+                _posts.update(::rollback)
+                homeViewModel.applyLikeStateToPost(post.id, isLiked = wasLiked, likesCount = previousCount)
+                _actionError.value = "Gagal memproses like. Coba lagi."
             }
-            homeViewModel.loadPosts()
         }
     }
 
@@ -956,17 +1253,25 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
         val profile = _user.value ?: return
         if (_isFollowActionLoading.value) return
         val wasFollowing = _isFollowing.value
+        val previousFollowersCount = profile.followersCount
+
+        // 1. Reflect the new follow state immediately.
+        _isFollowing.value = !wasFollowing
+        val delta = if (wasFollowing) -1 else 1
+        _user.update { it?.copy(followersCount = (it.followersCount + delta).coerceAtLeast(0)) }
+        _isFollowActionLoading.value = true
+
+        // 2. Confirm with the server; revert if the follow/unfollow request failed.
         viewModelScope.launch(Dispatchers.IO) {
-            _isFollowActionLoading.value = true
             val result = if (wasFollowing) {
                 userRepo.unfollowUser(profile.id)
             } else {
                 userRepo.followUser(profile.id)
             }
-            if (result.isSuccess) {
-                _isFollowing.value = !wasFollowing
-                val delta = if (wasFollowing) -1 else 1
-                _user.update { it?.copy(followersCount = (it.followersCount + delta).coerceAtLeast(0)) }
+            if (result.isFailure) {
+                _isFollowing.value = wasFollowing
+                _user.update { it?.copy(followersCount = previousFollowersCount) }
+                _actionError.value = if (wasFollowing) "Gagal berhenti mengikuti. Coba lagi." else "Gagal mengikuti. Coba lagi."
             }
             _isFollowActionLoading.value = false
         }
@@ -1023,11 +1328,25 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     }
 
     fun deletePost(postId: String) {
+        val previousList = _posts.value
+        val index = previousList.indexOfFirst { it.id == postId }
+        if (index == -1) return
+        val removedPost = previousList[index]
+
+        // 1. Remove immediately from this profile's post list and the home feed.
+        _posts.update { it.filterNot { p -> p.id == postId } }
+        homeViewModel.removePostById(postId)
+
+        // 2. Confirm with the server; restore in both places if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
-            if (result.isSuccess) {
-                _posts.value = _posts.value.filter { it.id != postId }
-                homeViewModel.loadPosts()
+            if (result.isFailure) {
+                _posts.update { current ->
+                    if (current.any { it.id == postId }) current
+                    else current.toMutableList().apply { add(index.coerceIn(0, size), removedPost) }
+                }
+                homeViewModel.restorePost(removedPost, index)
+                _actionError.value = "Gagal menghapus postingan. Coba lagi."
             }
         }
     }
@@ -1054,6 +1373,13 @@ class FollowListViewModel : ViewModel() {
 
     private val _followActionLoadingIds = MutableStateFlow<Set<String>>(emptySet())
     val followActionLoadingIds = _followActionLoadingIds.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
 
     private var targetUserId: String = ""
 
@@ -1104,20 +1430,31 @@ class FollowListViewModel : ViewModel() {
 
     fun toggleFollow(entry: FollowListEntry) {
         if (_followActionLoadingIds.value.contains(entry.user.id)) return
+        val wasFollowing = entry.isFollowedByMe
+        val newValue = !wasFollowing
+
+        // 1. Flip the follow state immediately in both lists.
+        fun updateList(list: List<FollowListEntry>) = list.map {
+            if (it.user.id == entry.user.id) it.copy(isFollowedByMe = newValue) else it
+        }
+        _followers.value = updateList(_followers.value)
+        _following.value = updateList(_following.value)
+        _followActionLoadingIds.update { it + entry.user.id }
+
+        // 2. Confirm with the server; revert if the request failed.
         viewModelScope.launch(Dispatchers.IO) {
-            _followActionLoadingIds.update { it + entry.user.id }
-            val result = if (entry.isFollowedByMe) {
+            val result = if (wasFollowing) {
                 userRepo.unfollowUser(entry.user.id)
             } else {
                 userRepo.followUser(entry.user.id)
             }
-            if (result.isSuccess) {
-                val newValue = !entry.isFollowedByMe
-                fun updateList(list: List<FollowListEntry>) = list.map {
-                    if (it.user.id == entry.user.id) it.copy(isFollowedByMe = newValue) else it
+            if (result.isFailure) {
+                fun revertList(list: List<FollowListEntry>) = list.map {
+                    if (it.user.id == entry.user.id) it.copy(isFollowedByMe = wasFollowing) else it
                 }
-                _followers.value = updateList(_followers.value)
-                _following.value = updateList(_following.value)
+                _followers.value = revertList(_followers.value)
+                _following.value = revertList(_following.value)
+                _actionError.value = if (wasFollowing) "Gagal berhenti mengikuti. Coba lagi." else "Gagal mengikuti. Coba lagi."
             }
             _followActionLoadingIds.update { it - entry.user.id }
         }

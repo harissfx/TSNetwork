@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,11 +50,22 @@ fun NotificationScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isSelectMode by viewModel.isSelectMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
+    val actionError by viewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
     var showDeleteSelectedConfirm by remember { mutableStateOf(false) }
 
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearActionError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (isSelectMode) {
                 TopAppBar(

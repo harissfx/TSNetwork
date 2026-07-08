@@ -117,6 +117,8 @@ fun PostDetailScreen(
     val commentText by viewModel.commentText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val replyingTo by viewModel.replyingTo.collectAsState()
+    val actionError by viewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val context = LocalContext.current
@@ -201,7 +203,16 @@ fun PostDetailScreen(
         highlightedCommentId = null
     }
 
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearActionError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.diskusi_title), fontWeight = FontWeight.Bold) },

@@ -55,13 +55,24 @@ fun ProfileScreen(
     val isFollowing by viewModel.isFollowing.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val isFollowActionLoading by viewModel.isFollowActionLoading.collectAsState()
+    val actionError by viewModel.actionError.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val currentUserId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "" }
 
     LaunchedEffect(userId) {
         viewModel.loadProfile(userId)
     }
 
+    LaunchedEffect(actionError) {
+        val message = actionError
+        if (message != null) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearActionError()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(user?.username ?: "Profile", fontWeight = FontWeight.Bold) },
