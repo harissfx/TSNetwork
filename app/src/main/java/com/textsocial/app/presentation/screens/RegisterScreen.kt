@@ -85,7 +85,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Username Input
             OutlinedTextField(
                 value = username,
                 onValueChange = { viewModel.onUsernameChange(it) },
@@ -99,7 +98,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Email Input
             OutlinedTextField(
                 value = email,
                 onValueChange = { viewModel.onEmailChange(it) },
@@ -113,7 +111,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Password Input
             OutlinedTextField(
                 value = password,
                 onValueChange = { viewModel.onPasswordChange(it) },
@@ -136,7 +133,6 @@ fun RegisterScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Confirm Password Input
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = { viewModel.onConfirmPasswordChange(it) },
@@ -160,7 +156,6 @@ fun RegisterScreen(
                 )
             }
 
-            // Register Button
             Button(
                 onClick = { viewModel.register() },
                 modifier = Modifier

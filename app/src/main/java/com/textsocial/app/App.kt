@@ -1,9 +1,9 @@
 package com.textsocial.app
 
-import androidx.multidex.MultiDexApplication
+import android.app.Application
 import com.textsocial.app.di.ServiceLocator
 
-class App : MultiDexApplication() {
+class App : Application() {
     override fun onCreate() {
         super.onCreate()
         ServiceLocator.init(this)

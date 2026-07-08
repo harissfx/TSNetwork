@@ -8,19 +8,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/**
- * Util buat ngurusin timestamp yang balik dari Supabase/PostgREST, contohnya
- * "2026-07-05T10:23:45.123456+00:00" atau "2026-07-05T10:23:45Z", terus
- * diubah jadi teks yang gampang dibaca kayak "5m", "2h", atau tanggal penuh.
- *
- * CATATAN: sengaja TIDAK pakai java.time (Instant/OffsetDateTime) karena
- * app ini minSdk 24 dan belum ada core library desugaring dipasang, jadi
- * java.time baru aman dipakai mulai API 26. SimpleDateFormat sudah ada
- * sejak API 1, jadi ini pilihan paling aman tanpa nambah dependency baru.
- */
 object TimeUtils {
 
-    /** Ubah timestamp ISO-8601 dari server jadi epoch millis, null kalau gagal di-parse. */
     fun parseToEpochMillis(iso: String?): Long? {
         if (iso.isNullOrBlank()) return null
         val normalized = normalize(iso) ?: return null
@@ -59,13 +48,6 @@ object TimeUtils {
         return normalizedDatePart + offsetPart
     }
 
-    /**
-     * Format waktu relatif yang ringkas ala Twitter/X: "now", "5m", "3h", "2d",
-     * lalu jatuh ke tanggal singkat kalau sudah lebih dari seminggu.
-     * Dipakai di tempat-tempat yang butuh label kecil: feed, notifikasi, list DM, komentar.
-     *
-     * Butuh [context] supaya bisa ambil teks sesuai bahasa yang aktif (EN/ID).
-     */
     fun timeAgoShort(context: Context, iso: String?): String {
         val millis = parseToEpochMillis(iso) ?: return ""
         val diff = System.currentTimeMillis() - millis
@@ -85,22 +67,16 @@ object TimeUtils {
         }
     }
 
-    /** Format lengkap buat halaman detail, contoh: "5 Jul 2026 · 14:32". */
     fun timeFull(iso: String?): String {
         val millis = parseToEpochMillis(iso) ?: return ""
         return SimpleDateFormat("d MMM yyyy '·' HH:mm", Locale.US).format(Date(millis))
     }
 
-    /** Cuma jam:menit, buat bubble chat, contoh: "14:32". */
     fun clockTime(iso: String?): String {
         val millis = parseToEpochMillis(iso) ?: return ""
         return SimpleDateFormat("HH:mm", Locale.US).format(Date(millis))
     }
 
-    /**
-     * Label hari buat pemisah tanggal di chat: "Today", "Yesterday", atau "5 Jul 2026".
-     * Butuh [context] buat teks "Today"/"Yesterday" sesuai bahasa aktif.
-     */
     fun dayLabel(context: Context, iso: String?): String {
         val millis = parseToEpochMillis(iso) ?: return ""
         val target = Calendar.getInstance().apply { timeInMillis = millis }
@@ -116,7 +92,6 @@ object TimeUtils {
         }
     }
 
-    /** True kalau dua timestamp ISO jatuh di tanggal kalender yang sama (dipakai buat separator tanggal di chat). */
     fun isSameCalendarDay(isoA: String?, isoB: String?): Boolean {
         val a = parseToEpochMillis(isoA) ?: return false
         val b = parseToEpochMillis(isoB) ?: return false
@@ -130,17 +105,13 @@ object TimeUtils {
                 a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
     }
 
-    /** Berapa jam yang sudah berlalu sejak timestamp, dipakai buat perhitungan skor feed. Minimum 0.0. */
     fun hoursSince(iso: String?): Double {
         val millis = parseToEpochMillis(iso) ?: return 0.0
         val diff = System.currentTimeMillis() - millis
         return (diff.coerceAtLeast(0) / 3_600_000.0)
     }
 
-    /**
-     * Sisa waktu tayang story ("23h left" / "45m left"), atau "Expired" kalau sudah lewat.
-     * Butuh [context] buat teks yang sesuai bahasa aktif.
-     */
+
     fun storyTimeLeft(context: Context, expiresAtIso: String?): String {
         val millis = parseToEpochMillis(expiresAtIso) ?: return ""
         val diff = millis - System.currentTimeMillis()

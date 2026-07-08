@@ -10,10 +10,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 
 enum class AvatarSize(val sizeDp: Dp) {
     COMPACT(32.dp),
@@ -26,13 +28,26 @@ fun UserAvatarComponent(
     username: String,
     avatarColor: String,
     modifier: Modifier = Modifier,
-    size: AvatarSize = AvatarSize.MEDIUM
+    size: AvatarSize = AvatarSize.MEDIUM,
+    avatarUrl: String? = null
 ) {
+    if (!avatarUrl.isNullOrBlank()) {
+        AsyncImage(
+            model = avatarUrl,
+            contentDescription = "Foto profil $username",
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .size(size.sizeDp)
+                .clip(CircleShape)
+        )
+        return
+    }
+
     val initial = if (username.isNotEmpty()) username.take(1).uppercase() else "?"
     val colorParsed = try {
         Color(android.graphics.Color.parseColor(avatarColor))
     } catch (e: Exception) {
-        Color(0xFFFF5722) // orange fallback
+        Color(0xFFFF5722)
     }
 
     Box(

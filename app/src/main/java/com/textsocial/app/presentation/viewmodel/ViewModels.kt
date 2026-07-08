@@ -11,11 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// 0. MAIN TAB VIEWMODEL
-// Menyimpan tab mana yang sedang aktif di HorizontalPager MainScreen (Home/Search/
-// CreatePost/Notifications/Profile). Dipakai supaya layar-layar yang di-push di atas
-// MainScreen (mis. profil orang lain) tetap bisa "pindah tab" dengan cara pop kembali
-// ke MainScreen lalu memberi tahu tab mana yang harus ditampilkan.
+
 class MainTabViewModel : ViewModel() {
     private val _currentTab = MutableStateFlow(0)
     val currentTab = _currentTab.asStateFlow()
@@ -25,10 +21,6 @@ class MainTabViewModel : ViewModel() {
     }
 }
 
-// 0B. BADGE VIEWMODEL
-// Dibuat sekali di AppNavGraph (sama seperti MainTabViewModel) supaya angka belum-dibaca
-// tetap sinkron di berbagai layar sekaligus: badge ikon Notifikasi di BottomNavigationBar,
-// badge ikon DM/pesan di TopAppBar HomeScreen, dan indikator per-percakapan di DMListScreen.
 class BadgeViewModel : ViewModel() {
     private val msgRepo = ServiceLocator.messageRepository
     private val userRepo = ServiceLocator.userRepository
@@ -62,18 +54,17 @@ class BadgeViewModel : ViewModel() {
         }
     }
 
-    // Dipanggil begitu tab Notifikasi dibuka: badge langsung hilang di UI (optimistic),
-    // sambil PATCH is_read=true dikirim ke server di belakang layar.
-    fun markNotificationsRead() {
-        if (_unreadNotifications.value == 0) return
-        _unreadNotifications.value = 0
-        viewModelScope.launch(Dispatchers.IO) {
-            userRepo.markNotificationsAsRead()
+    fun decrementUnreadNotifications() {
+        if (_unreadNotifications.value > 0) {
+            _unreadNotifications.value -= 1
         }
+    }
+
+    fun clearUnreadNotifications() {
+        _unreadNotifications.value = 0
     }
 }
 
-// 1. SPLASH VIEWMODEL
 class SplashViewModel : ViewModel() {
     private val authRepo = ServiceLocator.authRepository
     private val _isUserLoggedIn = MutableStateFlow<Boolean?>(null)
@@ -88,7 +79,6 @@ class SplashViewModel : ViewModel() {
     }
 }
 
-// 2. LOGIN VIEWMODEL
 class LoginViewModel : ViewModel() {
     private val authRepo = ServiceLocator.authRepository
 
@@ -147,7 +137,6 @@ class LoginViewModel : ViewModel() {
     }
 }
 
-// 3. REGISTER VIEWMODEL
 class RegisterViewModel : ViewModel() {
     private val authRepo = ServiceLocator.authRepository
 
@@ -230,21 +219,13 @@ class RegisterViewModel : ViewModel() {
     }
 }
 
-// 4. HOME VIEWMODEL (FEED WITH PAGINATION)
-// Mode urutan feed: LATEST = kronologis murni (paling baru di atas), FOR_YOU =
-// pendekatan "algoritma" sederhana yang menggabungkan seberapa baru postingan
-// dengan seberapa besar engagement-nya (like + komentar), supaya postingan yang
-// rame direspon tetap kelihatan walau bukan yang paling baru — mirip prinsip
-// feed di media sosial modern, tapi dihitung di sisi klien (tanpa server ranking).
 enum class FeedMode { FOR_YOU, LATEST }
 
 class HomeViewModel : ViewModel() {
     private val postRepo = ServiceLocator.postRepository
 
-    // Data mentah hasil fetch dari server (urutan kronologis apa adanya).
     private val _rawPosts = MutableStateFlow<List<Post>>(emptyList())
 
-    // Data yang benar-benar ditampilkan ke UI, sudah diurutkan sesuai `feedMode`.
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
     val posts = _posts.asStateFlow()
 
@@ -280,18 +261,12 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    /** Ganti mode urutan feed tanpa perlu fetch ulang ke server — cukup re-sort data yang sudah ada. */
     fun setFeedMode(mode: FeedMode) {
         if (_feedMode.value == mode) return
         _feedMode.value = mode
         _posts.value = sortForMode(_rawPosts.value, mode)
     }
 
-    // Skor ala "hot ranking" (terinspirasi dari formula gravity Hacker News):
-    // makin banyak like/komentar -> skor naik, tapi skor meluruh seiring waktu
-    // supaya postingan lama tidak selamanya mendominasi feed hanya karena
-    // sempat viral. Komentar diberi bobot lebih besar dari like karena
-    // merefleksikan engagement yang lebih aktif.
     private fun engagementScore(post: Post): Double {
         val ageHours = com.textsocial.app.util.TimeUtils.hoursSince(post.createdAt)
         val engagement = (post.likesCount * 1.5) + (post.commentsCount * 3.0) + 1.0
@@ -344,7 +319,6 @@ class HomeViewModel : ViewModel() {
     }
 }
 
-// 5. CREATE POST VIEWMODEL
 class CreatePostViewModel : ViewModel() {
     private val postRepo = ServiceLocator.postRepository
 
@@ -382,7 +356,6 @@ class CreatePostViewModel : ViewModel() {
     }
 }
 
-// 6. POST DETAIL VIEWMODEL (COMMENTS)
 class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val postRepo = ServiceLocator.postRepository
 
@@ -404,7 +377,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     fun setPost(postId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            // Find post from shared HomeViewModel list
             val found = homeViewModel.posts.value.find { it.id == postId }
             if (found != null) {
                 _post.value = found
@@ -415,7 +387,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
                     _post.value = foundFallback
                 }
             }
-            // Fetch comments
             val commentsResult = postRepo.getComments(postId)
             if (commentsResult.isSuccess) {
                 _comments.value = commentsResult.getOrDefault(emptyList())
@@ -447,12 +418,10 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
             if (result.isSuccess) {
                 _commentText.value = ""
                 _replyingTo.value = null
-                // Refresh comments
                 val commentsResult = postRepo.getComments(currentPost.id)
                 if (commentsResult.isSuccess) {
                     _comments.value = commentsResult.getOrDefault(emptyList())
                 }
-                // Refresh post comment count
                 _post.update { it?.copy(commentsCount = it.commentsCount + 1) }
             }
         }
@@ -485,9 +454,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deleteComment(commentId)
             if (result.isSuccess) {
-                // Hapus komentar itu sendiri sekaligus SEMUA turunannya (balasan, balasan
-                // dari balasan, dst — bukan cuma anak langsung) supaya konsisten dengan
-                // "on delete cascade" di database.
                 val current = _comments.value
                 val idsToRemove = mutableSetOf(commentId)
                 var changed = true
@@ -506,7 +472,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     }
 }
 
-// 7. STORY VIEWMODEL
 class StoryViewModel : ViewModel() {
     private val storyRepo = ServiceLocator.storyRepository
     private val userRepo = ServiceLocator.userRepository
@@ -519,6 +484,27 @@ class StoryViewModel : ViewModel() {
 
     private val _storyText = MutableStateFlow("")
     val storyText = _storyText.asStateFlow()
+
+    private val _storyBackgroundColor = MutableStateFlow("#000000")
+    val storyBackgroundColor = _storyBackgroundColor.asStateFlow()
+
+    private val _storyTextColor = MutableStateFlow("#FFFFFF")
+    val storyTextColor = _storyTextColor.asStateFlow()
+
+    private val _storyFontFamily = MutableStateFlow("default")
+    val storyFontFamily = _storyFontFamily.asStateFlow()
+
+    fun onStoryBackgroundColorChange(hex: String) {
+        _storyBackgroundColor.value = hex
+    }
+
+    fun onStoryTextColorChange(hex: String) {
+        _storyTextColor.value = hex
+    }
+
+    fun onStoryFontFamilyChange(key: String) {
+        _storyFontFamily.value = key
+    }
 
     private val _isFinished = MutableStateFlow(false)
     val isFinished = _isFinished.asStateFlow()
@@ -539,17 +525,9 @@ class StoryViewModel : ViewModel() {
             _isLoading.value = true
             val result = storyRepo.getStories()
             val rawStories = result.getOrDefault(emptyList())
-
-            // BUG SEBELUMNYA: semua story dari SEMUA user ditampilkan, padahal seharusnya
-            // hanya story milik sendiri + story dari user yang sudah kita follow.
             val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
             val followingIds = userRepo.getFollowingUsers().getOrDefault(emptyList()).map { it.id }.toSet()
             val visibleStories = rawStories.filter { it.userId == myId || followingIds.contains(it.userId) }
-
-            // Kelompokkan story per user supaya user yang punya beberapa story
-            // tampil sebagai SATU bubble (kayak Instagram), bukan beberapa bubble
-            // terpisah. Di dalam satu user, urutkan dari yang paling lama ke
-            // terbaru; antar user, yang paling baru posting story ditaruh duluan.
             val grouped = visibleStories
                 .groupBy { it.userId }
                 .values
@@ -567,19 +545,24 @@ class StoryViewModel : ViewModel() {
         }
     }
 
-    // Dipanggil setiap kali layar "Buat Story" dibuka, supaya sisa state dari sesi
-    // sebelumnya (misal isFinished = true dari story terakhir yang berhasil dibuat)
-    // tidak membuat layar langsung ke-pop lagi sebelum sempat dipakai.
     fun resetComposerState() {
         _storyText.value = ""
         _isFinished.value = false
+        _storyBackgroundColor.value = "#000000"
+        _storyTextColor.value = "#FFFFFF"
+        _storyFontFamily.value = "default"
     }
 
     fun createStory() {
         if (_storyText.value.isBlank()) return
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            val result = storyRepo.createStory(_storyText.value)
+            val result = storyRepo.createStory(
+                text = _storyText.value,
+                backgroundColor = _storyBackgroundColor.value,
+                textColor = _storyTextColor.value,
+                fontFamily = _storyFontFamily.value
+            )
             _isLoading.value = false
             if (result.isSuccess) {
                 _isFinished.value = true
@@ -588,12 +571,7 @@ class StoryViewModel : ViewModel() {
         }
     }
 
-    // BUG SEBELUMNYA: fungsi ini dipanggil untuk SEMUA story yang dibuka, termasuk story
-    // milik sendiri, jadi nama/akun sendiri ikut tercatat sebagai "viewer" story sendiri.
-    // Sekarang skip pencatatan kalau story yang dibuka adalah story sendiri.
     fun markStoryAsViewed(storyId: String, storyOwnerId: String) {
-        val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
-        if (myId != null && myId == storyOwnerId) return
         viewModelScope.launch(Dispatchers.IO) {
             storyRepo.recordStoryView(storyId)
             loadStories()
@@ -610,7 +588,6 @@ class StoryViewModel : ViewModel() {
     }
 }
 
-// 8. DM LIST VIEWMODEL
 class DMListViewModel : ViewModel() {
     private val msgRepo = ServiceLocator.messageRepository
 
@@ -634,9 +611,9 @@ class DMListViewModel : ViewModel() {
     }
 }
 
-// 9. DM CHAT VIEWMODEL
 class DMChatViewModel : ViewModel() {
     private val msgRepo = ServiceLocator.messageRepository
+    private val userRepo = ServiceLocator.userRepository
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
@@ -647,25 +624,34 @@ class DMChatViewModel : ViewModel() {
     private val _sendError = MutableStateFlow<String?>(null)
     val sendError = _sendError.asStateFlow()
 
+    private val _otherIsVerified = MutableStateFlow(false)
+    val otherIsVerified = _otherIsVerified.asStateFlow()
+
+    private val _otherAvatarUrl = MutableStateFlow<String?>(null)
+    val otherAvatarUrl = _otherAvatarUrl.asStateFlow()
+
     private var targetUserId: String = ""
 
     fun initChat(otherUserId: String, onMessagesRead: () -> Unit = {}) {
         targetUserId = otherUserId
+
         viewModelScope.launch(Dispatchers.IO) {
-            // SEBELUMNYA: histori pesan lama tidak pernah dimuat di sini, hanya
-            // observeMessages() yang menunggu update realtime lewat WebSocket. Jadi
-            // begitu chat dibuka, layar terlihat kosong sampai ada pesan baru masuk.
+            val profileResult = userRepo.getProfile(otherUserId)
+            val profile = profileResult.getOrNull()
+            _otherIsVerified.value = profile?.isVerified ?: false
+            _otherAvatarUrl.value = profile?.avatarUrl
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+
             val result = msgRepo.getMessages(targetUserId)
             if (result.isSuccess) {
                 _messages.value = result.getOrDefault(emptyList())
             }
 
-            // Mark read -- lalu beri tahu pemanggil (mis. BadgeViewModel) supaya badge
-            // jumlah pesan belum-dibaca di ikon DM/BottomNavigationBar ikut diperbarui.
             msgRepo.markMessagesAsRead(targetUserId)
             onMessagesRead()
 
-            // Dynamic flow observation representing WebSockets / Supabase Realtime in a highly responsive manner!
             msgRepo.observeMessages(targetUserId).collect { list ->
                 _messages.value = list
             }
@@ -686,10 +672,6 @@ class DMChatViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val result = msgRepo.sendMessage(targetUserId, text)
             if (result.isFailure) {
-                // Sebelumnya kegagalan ini didiamkan total: teks sudah terlanjur
-                // dikosongkan dan tidak ada bubble/pesan error apa pun yang muncul,
-                // jadi kelihatan seperti "halaman chat kosong". Sekarang teks yang
-                // gagal terkirim dikembalikan ke kolom input, dan errornya ditampilkan.
                 _messageText.value = text
                 _sendError.value = "Pesan gagal terkirim. Coba lagi."
             }
@@ -708,7 +690,6 @@ class DMChatViewModel : ViewModel() {
     }
 }
 
-// 10. NOTIFICATION VIEWMODEL
 class NotificationViewModel : ViewModel() {
     private val userRepo = ServiceLocator.userRepository
 
@@ -717,6 +698,12 @@ class NotificationViewModel : ViewModel() {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
+    private val _isSelectMode = MutableStateFlow(false)
+    val isSelectMode = _isSelectMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedIds = _selectedIds.asStateFlow()
 
     init {
         loadNotifications()
@@ -731,31 +718,69 @@ class NotificationViewModel : ViewModel() {
         }
     }
 
-    // Dipanggil tiap tab Notifikasi baru saja DIBUKA. SEBELUMNYA: notifikasi ditandai
-    // "sudah dibaca" cuma di server (lewat BadgeViewModel), sementara daftar `_notifications`
-    // di sini tidak pernah ikut di-update -- jadi walau server sudah is_read=true, list yang
-    // sedang tampil di layar tetap pakai data lama (isRead=false), makanya tetap kelihatan
-    // biru terus walaupun user sudah tap salah satu notifikasi dan kembali lagi.
-    // SEKARANG: begitu list terbaru selesai dimuat, kita langsung set semuanya isRead=true
-    // SECARA LOKAL di state ini juga (bukan cuma di server), jadi tampilannya seketika tidak
-    // biru lagi tanpa perlu reload/tab-switch tambahan supaya berubah.
-    fun loadAndMarkAsRead(onDone: () -> Unit = {}) {
+    fun markAsRead(notification: Notification, onMarked: () -> Unit = {}) {
+        if (notification.isRead) return
+        _notifications.value = _notifications.value.map {
+            if (it.id == notification.id) it.copy(isRead = true) else it
+        }
+        onMarked()
         viewModelScope.launch(Dispatchers.IO) {
-            _isLoading.value = true
-            val result = userRepo.getNotifications()
-            val fresh = result.getOrDefault(emptyList())
-            val hadUnread = fresh.any { !it.isRead }
-            _notifications.value = fresh.map { it.copy(isRead = true) }
-            _isLoading.value = false
-            if (hadUnread) {
-                userRepo.markNotificationsAsRead()
-            }
-            onDone()
+            userRepo.markNotificationAsRead(notification.id)
+        }
+    }
+
+    fun markAllAsRead(onMarked: () -> Unit = {}) {
+        if (_notifications.value.none { !it.isRead }) return
+        _notifications.value = _notifications.value.map { it.copy(isRead = true) }
+        onMarked()
+        viewModelScope.launch(Dispatchers.IO) {
+            userRepo.markNotificationsAsRead()
+        }
+    }
+
+    fun deleteNotification(notificationId: String) {
+        _notifications.update { list -> list.filterNot { it.id == notificationId } }
+        viewModelScope.launch(Dispatchers.IO) {
+            userRepo.deleteNotification(notificationId)
+        }
+    }
+
+    fun toggleSelectMode() {
+        _isSelectMode.update { !it }
+        if (!_isSelectMode.value) _selectedIds.value = emptySet()
+    }
+
+    fun enterSelectModeWith(notificationId: String) {
+        _isSelectMode.value = true
+        _selectedIds.value = setOf(notificationId)
+    }
+
+    fun toggleSelected(notificationId: String) {
+        _selectedIds.update { current ->
+            if (current.contains(notificationId)) current - notificationId else current + notificationId
+        }
+    }
+
+    fun selectAll() {
+        _selectedIds.value = _notifications.value.map { it.id }.toSet()
+    }
+
+    fun clearSelection() {
+        _selectedIds.value = emptySet()
+    }
+
+    fun deleteSelected() {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        _notifications.update { list -> list.filterNot { ids.contains(it.id) } }
+        _selectedIds.value = emptySet()
+        _isSelectMode.value = false
+        viewModelScope.launch(Dispatchers.IO) {
+            userRepo.deleteNotifications(ids.toList())
         }
     }
 }
 
-// 11. SEARCH VIEWMODEL
 class SearchViewModel : ViewModel() {
     private val userRepo = ServiceLocator.userRepository
 
@@ -801,7 +826,6 @@ class SearchViewModel : ViewModel() {
     }
 }
 
-// 12. PROFILE VIEWMODEL
 class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val userRepo = ServiceLocator.userRepository
     private val postRepo = ServiceLocator.postRepository
@@ -821,24 +845,57 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val _displayNameText = MutableStateFlow("")
     val displayNameText = _displayNameText.asStateFlow()
 
+    private val _usernameText = MutableStateFlow("")
+    val usernameText = _usernameText.asStateFlow()
+
+    private val _isUsernameSaving = MutableStateFlow(false)
+    val isUsernameSaving = _isUsernameSaving.asStateFlow()
+
+    private val _usernameError = MutableStateFlow<String?>(null)
+    val usernameError = _usernameError.asStateFlow()
+
+    private val _usernameSaveSuccess = MutableStateFlow(false)
+    val usernameSaveSuccess = _usernameSaveSuccess.asStateFlow()
+
     private val _isFollowing = MutableStateFlow(false)
     val isFollowing = _isFollowing.asStateFlow()
 
+    private val _followsMe = MutableStateFlow(false)
+    val followsMe = _followsMe.asStateFlow()
+
     private val _isFollowActionLoading = MutableStateFlow(false)
     val isFollowActionLoading = _isFollowActionLoading.asStateFlow()
+
+    private val _isAvatarUploading = MutableStateFlow(false)
+    val isAvatarUploading = _isAvatarUploading.asStateFlow()
+
+    private val _avatarUploadError = MutableStateFlow<String?>(null)
+    val avatarUploadError = _avatarUploadError.asStateFlow()
+    fun uploadAvatar(imageBytes: ByteArray) {
+        if (_isAvatarUploading.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isAvatarUploading.value = true
+            _avatarUploadError.value = null
+            val result = userRepo.uploadAvatar(imageBytes)
+            if (result.isSuccess) {
+                val newUrl = result.getOrNull()
+                _user.update { it?.copy(avatarUrl = newUrl) }
+            } else {
+                _avatarUploadError.value = "Gagal mengunggah foto profil. Coba lagi."
+            }
+            _isAvatarUploading.value = false
+        }
+    }
 
     fun loadProfile(userId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             val userResult = userRepo.getProfile(userId)
-            // getProfile() resolves the "me_id" placeholder to the real UUID internally,
-            // so we must use profile.id (not the raw userId param) when matching posts below.
             var resolvedUserId = userId
             if (userResult.isSuccess) {
                 var profile = userResult.getOrNull()
                 resolvedUserId = profile?.id ?: userId
 
-                // Ambil jumlah followers/following yang sebenarnya dari tabel follows
                 val countsResult = userRepo.getFollowCounts(resolvedUserId)
                 if (countsResult.isSuccess) {
                     val (followers, following) = countsResult.getOrDefault(0 to 0)
@@ -848,24 +905,24 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
                 _user.value = profile
                 _bioText.value = profile?.bio ?: ""
                 _displayNameText.value = profile?.displayName ?: ""
+                _usernameText.value = profile?.username ?: ""
 
-                // Cek apakah user saat ini sudah follow profil ini (skip untuk profil sendiri)
                 val myId = com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId()
                 if (myId != null && resolvedUserId != myId) {
                     val followingResult = userRepo.isFollowing(resolvedUserId)
                     _isFollowing.value = followingResult.getOrDefault(false)
+                    val followsMeResult = userRepo.isFollowedBy(resolvedUserId)
+                    _followsMe.value = followsMeResult.getOrDefault(false)
                 } else {
                     _isFollowing.value = false
+                    _followsMe.value = false
                 }
             }
 
-            // Load user's own posts
             val postsResult = postRepo.getPosts()
             if (postsResult.isSuccess) {
                 val userPosts = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
                 _posts.value = userPosts
-                // BUG SEBELUMNYA: profile.postsCount tidak pernah dihitung dari data asli,
-                // jadi selalu menampilkan 0 di layar Profile walau user sudah punya postingan.
                 _user.update { it?.copy(postsCount = userPosts.size) }
             }
             _isLoading.value = false
@@ -891,7 +948,6 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
                     }
                 }
             }
-            // Sinkronkan juga ke feed Home supaya status like konsisten di kedua layar.
             homeViewModel.loadPosts()
         }
     }
@@ -924,7 +980,6 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
             _isLoading.value = false
             if (result.isSuccess) {
                 _user.value = current.copy(displayName = _displayNameText.value, bio = _bioText.value)
-                // onSuccess() triggers navigation (popBackStack), which must run on the main thread.
                 withContext(Dispatchers.Main) {
                     onSuccess()
                 }
@@ -940,6 +995,33 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
         _displayNameText.value = value
     }
 
+    fun onUsernameChange(value: String) {
+        _usernameText.value = value
+        _usernameError.value = null
+        _usernameSaveSuccess.value = false
+    }
+
+    fun updateUsername() {
+        if (_isUsernameSaving.value) return
+        val current = _user.value ?: return
+        val newUsername = _usernameText.value.trim()
+        if (newUsername.equals(current.username, ignoreCase = true)) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isUsernameSaving.value = true
+            _usernameError.value = null
+            val result = userRepo.updateUsername(newUsername)
+            if (result.isSuccess) {
+                _user.value = current.copy(username = newUsername.lowercase())
+                _usernameText.value = newUsername.lowercase()
+                _usernameSaveSuccess.value = true
+            } else {
+                _usernameError.value = result.exceptionOrNull()?.message ?: "Gagal mengubah username"
+            }
+            _isUsernameSaving.value = false
+        }
+    }
+
     fun deletePost(postId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
@@ -947,6 +1029,97 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
                 _posts.value = _posts.value.filter { it.id != postId }
                 homeViewModel.loadPosts()
             }
+        }
+    }
+}
+
+class FollowListViewModel : ViewModel() {
+    private val userRepo = ServiceLocator.userRepository
+    private val prefs = ServiceLocator.encryptedPreferencesManager
+
+    private val _followers = MutableStateFlow<List<FollowListEntry>>(emptyList())
+    val followers = _followers.asStateFlow()
+
+    private val _following = MutableStateFlow<List<FollowListEntry>>(emptyList())
+    val following = _following.asStateFlow()
+
+    private val _isLoadingFollowers = MutableStateFlow(false)
+    val isLoadingFollowers = _isLoadingFollowers.asStateFlow()
+
+    private val _isLoadingFollowing = MutableStateFlow(false)
+    val isLoadingFollowing = _isLoadingFollowing.asStateFlow()
+
+    private val _isFollowingListHidden = MutableStateFlow(false)
+    val isFollowingListHidden = _isFollowingListHidden.asStateFlow()
+
+    private val _followActionLoadingIds = MutableStateFlow<Set<String>>(emptySet())
+    val followActionLoadingIds = _followActionLoadingIds.asStateFlow()
+
+    private var targetUserId: String = ""
+
+    fun load(targetUserId: String) {
+        this.targetUserId = targetUserId
+        val myId = prefs.getUserId()
+        val isOwnProfile = myId != null && myId == targetUserId
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingFollowers.value = true
+            _isLoadingFollowing.value = true
+
+            val myFollowingIds = if (myId != null) {
+                userRepo.getFollowingUsers().getOrDefault(emptyList()).map { it.id }.toSet()
+            } else emptySet()
+            val myFollowerIds = if (myId != null) {
+                userRepo.getFollowersOf(myId).getOrDefault(emptyList()).map { it.id }.toSet()
+            } else emptySet()
+
+            val targetProfile = userRepo.getProfile(targetUserId).getOrNull()
+            _isFollowingListHidden.value = !isOwnProfile && (targetProfile?.hideFollowingList == true)
+
+            val followersResult = userRepo.getFollowersOf(targetUserId)
+            _followers.value = followersResult.getOrDefault(emptyList()).map { u ->
+                FollowListEntry(
+                    user = u,
+                    isFollowedByMe = myFollowingIds.contains(u.id),
+                    followsMe = myFollowerIds.contains(u.id)
+                )
+            }
+            _isLoadingFollowers.value = false
+
+            if (!_isFollowingListHidden.value) {
+                val followingResult = userRepo.getFollowingOf(targetUserId)
+                _following.value = followingResult.getOrDefault(emptyList()).map { u ->
+                    FollowListEntry(
+                        user = u,
+                        isFollowedByMe = myFollowingIds.contains(u.id),
+                        followsMe = myFollowerIds.contains(u.id)
+                    )
+                }
+            } else {
+                _following.value = emptyList()
+            }
+            _isLoadingFollowing.value = false
+        }
+    }
+
+    fun toggleFollow(entry: FollowListEntry) {
+        if (_followActionLoadingIds.value.contains(entry.user.id)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _followActionLoadingIds.update { it + entry.user.id }
+            val result = if (entry.isFollowedByMe) {
+                userRepo.unfollowUser(entry.user.id)
+            } else {
+                userRepo.followUser(entry.user.id)
+            }
+            if (result.isSuccess) {
+                val newValue = !entry.isFollowedByMe
+                fun updateList(list: List<FollowListEntry>) = list.map {
+                    if (it.user.id == entry.user.id) it.copy(isFollowedByMe = newValue) else it
+                }
+                _followers.value = updateList(_followers.value)
+                _following.value = updateList(_following.value)
+            }
+            _followActionLoadingIds.update { it - entry.user.id }
         }
     }
 }

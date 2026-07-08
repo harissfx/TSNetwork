@@ -24,6 +24,7 @@ import com.textsocial.app.di.ServiceLocator
 import com.textsocial.app.domain.model.User
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.CreatePostViewModel
 import kotlinx.coroutines.delay
 
@@ -46,15 +47,9 @@ fun CreatePostScreen(
     val maxChars = 500
     val charsRemaining = maxChars - text.length
 
-    // TextFieldValue lokal supaya kita tahu posisi kursor (dibutuhkan untuk deteksi
-    // "sedang mengetik @siapa" dan untuk menyisipkan username yang dipilih tepat di
-    // posisi yang benar), sementara `text` di ViewModel tetap jadi sumber data utama.
     var fieldValue by remember { mutableStateOf(TextFieldValue(text)) }
     var mentionSuggestions by remember { mutableStateOf<List<User>>(emptyList()) }
 
-    // Query mention aktif: teks setelah karakter "@" terakhir sebelum posisi kursor,
-    // selama belum ada spasi/baris baru di antaranya. Null berarti user sedang TIDAK
-    // mengetik mention, jadi dropdown tidak perlu tampil.
     val activeMentionQuery: String? = remember(fieldValue) {
         val cursor = fieldValue.selection.end
         if (cursor <= 0) return@remember null
@@ -71,10 +66,8 @@ fun CreatePostScreen(
             mentionSuggestions = emptyList()
             return@LaunchedEffect
         }
-        delay(250) // debounce ringan biar gak nembak API tiap huruf
+        delay(250)
         val result = if (activeMentionQuery.isBlank()) {
-            // Baru ketik "@" tanpa huruf apa pun -> tampilkan akun "terdekat"
-            // (yang di-follow user), BUKAN seluruh isi database.
             ServiceLocator.userRepository.getFollowingUsers()
         } else {
             ServiceLocator.userRepository.searchUsers(activeMentionQuery)
@@ -200,11 +193,18 @@ fun CreatePostScreen(
                                     UserAvatarComponent(
                                         username = user.username,
                                         avatarColor = user.avatarColor,
+                                        avatarUrl = user.avatarUrl,
                                         size = AvatarSize.COMPACT
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
-                                        Text(text = user.username, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = user.username, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            if (user.isVerified) {
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                VerifiedBadge(size = 13.dp)
+                                            }
+                                        }
                                         if (!user.displayName.isNullOrBlank()) {
                                             Text(
                                                 text = user.displayName,

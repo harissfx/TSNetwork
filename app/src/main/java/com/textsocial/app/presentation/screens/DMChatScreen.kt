@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.DMChatViewModel
 import com.textsocial.app.domain.model.Message
 import com.textsocial.app.util.TimeUtils
@@ -65,6 +66,8 @@ fun DMChatScreen(
     val messages by viewModel.messages.collectAsState()
     val messageText by viewModel.messageText.collectAsState()
     val sendError by viewModel.sendError.collectAsState()
+    val otherIsVerified by viewModel.otherIsVerified.collectAsState()
+    val otherAvatarUrl by viewModel.otherAvatarUrl.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -96,7 +99,8 @@ fun DMChatScreen(
                     ) {
                         UserAvatarComponent(
                             username = otherUsername,
-                            avatarColor = "#2196F3", // custom default theme color
+                            avatarColor = "#2196F3",
+                            avatarUrl = otherAvatarUrl,
                             size = AvatarSize.COMPACT
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -105,6 +109,10 @@ fun DMChatScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
+                        if (otherIsVerified) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            VerifiedBadge(size = 15.dp)
+                        }
                     }
                 },
                 navigationIcon = {

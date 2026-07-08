@@ -1,28 +1,35 @@
 <resources>
     <string name="app_name">OpenText</string>
-
-    <!-- Settings screen -->
     <string name="settings_title">App Settings</string>
     <string name="go_back">Go back</string>
     <string name="section_account_privacy">Account &amp; Privacy</string>
     <string name="private_account_title">Private Account</string>
     <string name="private_account_desc">Only approved users see your posts</string>
+    <string name="hide_following_list_title">Hide Following List</string>
+    <string name="hide_following_list_desc">Others won\'t be able to see who you follow</string>
     <string name="change_password_title">Change Password</string>
     <string name="change_password_desc">Regularly update your credentials</string>
-
+    <string name="follow_back_button">Follow Back</string>
+    <string name="follows_you_tag">Follows you</string>
+    <string name="no_followers_yet">No followers yet</string>
+    <string name="not_following_anyone_yet">Not following anyone yet</string>
+    <string name="following_list_hidden_message">This account has hidden who they follow</string>
     <string name="section_language">Language</string>
     <string name="language_row_title">App Language</string>
     <string name="language_row_desc">Choose how the app is displayed</string>
     <string name="language_option_system">Follow device language</string>
     <string name="language_option_indonesian">Bahasa Indonesia</string>
     <string name="language_option_english">English</string>
-
+    <string name="section_appearance">Appearance</string>
+    <string name="theme_row_title">App Theme</string>
+    <string name="theme_row_desc">Switch between light and dark mode</string>
+    <string name="theme_option_system">Follow device theme</string>
+    <string name="theme_option_light">Light</string>
+    <string name="theme_option_dark">Dark</string>
     <string name="section_about">About</string>
     <string name="app_version_label">OpenText Client v1.0.0</string>
     <string name="app_description">A complete open-source text-based social platform built with Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, and Upstash Redis rate-limiting.</string>
-
     <string name="logout_button">Logout Session</string>
-
     <string name="update_password_dialog_title">Update Password</string>
     <string name="password_encrypted_note">All password inputs are encrypted in-transit.</string>
     <string name="new_password_label">New Password</string>
@@ -31,8 +38,6 @@
     <string name="ok_button">OK</string>
     <string name="update_button">Update</string>
     <string name="cancel_button">Cancel</string>
-
-    <!-- Bottom navigation -->
     <string name="nav_feed">Feed</string>
     <string name="nav_search">Search</string>
     <string name="nav_post">Post</string>
@@ -91,6 +96,13 @@
     <string name="story_desc">What is on your mind? Up to 280 characters of text...</string>
     <string name="view_story">%1$s Views</string>
     <string name="story_view">Story Views</string>
+    <string name="story_background_label">Background</string>
+    <string name="story_text_color_label">Text Color</string>
+    <string name="story_font_label">Font</string>
+    <string name="font_option_default">Default</string>
+    <string name="font_option_serif">Serif</string>
+    <string name="font_option_monospace">Monospace</string>
+    <string name="font_option_cursive">Cursive</string>
     <string name="dm_title">Direct Messages</string>
     <string name="dm_entry">Write a message...</string>
     <string name="pesan_dihapus">This message has been deleted.</string>
@@ -103,4 +115,24 @@
     <string name="notif_started_following">started following you</string>
     <string name="notif_mentioned_you">mentioned you in a post</string>
     <string name="notif_generic">sent you a notification</string>
+    <string name="no_view">No views recorded yet.</string>
+    <string name="rpl_title">Replies</string>
+    <string name="rpl_postkos">No replies yet. Start the conversation!</string>
+    <string name="ava_title">Tap the photo to change it from the gallery.</string>
+    <string name="war_ava">Letters, numbers, and underscores only; minimum 3 characters.</string>
+    <string name="sv_ava">Save</string>
+    <string name="notif_del">The selected notification will be permanently deleted and cannot be restored.</string>
+    <string name="del_title">Delete %1$s notification?</string>
+    <string name="priv_title">This account is private.</string>
+    <string name="priv_desc">Follow this account to see their posts.</string>
+    <string name="error_upload_photo_failed">Failed to upload photo: %1$s</string>
+    <string name="error_save_profile_photo_failed">Failed to save profile photo: %1$s</string>
+    <string name="error_username_min_length">Username must be at least 3 characters</string>
+    <string name="error_username_invalid_chars">Username can only contain letters, numbers, and underscores</string>
+    <string name="error_username_taken">Username is already taken by someone else</string>
+    <string name="error_username_update_failed">Failed to update username: %1$s</string>
+    <string name="dm_kosong">No private chats yet</string>
+    <string name="dm_kosongdesc">Navigate to profiles to start messaging</string>
+    <string name="feed_kosong">No posts found yet. Be the first to share!</string>
+    <string name="prof_kosong">No posts shared by this user yet.</string>
 </resources>

@@ -8,11 +8,14 @@ data class User(
     val email: String,
     val displayName: String?,
     val bio: String?,
-    val avatarColor: String, // Hex string like "#FF5722"
+    val avatarColor: String,
     val isPrivate: Boolean = false,
     val followersCount: Int = 0,
     val followingCount: Int = 0,
-    val postsCount: Int = 0
+    val postsCount: Int = 0,
+    val isVerified: Boolean = false,
+    val avatarUrl: String? = null,
+    val hideFollowingList: Boolean = false
 ) : Serializable
 
 data class Post(
@@ -25,7 +28,9 @@ data class Post(
     val createdAt: String,
     val likesCount: Int,
     val commentsCount: Int,
-    val isLiked: Boolean = false
+    val isLiked: Boolean = false,
+    val isVerified: Boolean = false,
+    val userAvatarUrl: String? = null
 ) : Serializable
 
 data class Story(
@@ -36,7 +41,12 @@ data class Story(
     val createdAt: String,
     val expiresAt: String,
     val avatarColor: String,
-    val views: List<String> = emptyList() // List of usernames who viewed
+    val views: List<String> = emptyList(),
+    val backgroundColor: String = "#000000",
+    val textColor: String = "#FFFFFF",
+    val fontFamily: String = "default",
+    val isVerified: Boolean = false,
+    val avatarUrl: String? = null
 ) : Serializable
 
 data class Comment(
@@ -44,12 +54,15 @@ data class Comment(
     val postId: String,
     val userId: String,
     val username: String,
+    val displayName: String? = null,
     val text: String,
     val createdAt: String,
     val avatarColor: String,
     val parentId: String? = null,
     val likesCount: Int = 0,
-    val isLiked: Boolean = false
+    val isLiked: Boolean = false,
+    val isVerified: Boolean = false,
+    val avatarUrl: String? = null
 ) : Serializable
 
 data class Message(
@@ -69,12 +82,19 @@ data class Conversation(
     val otherAvatarColor: String,
     val lastMessage: String?,
     val lastMessageTime: String?,
-    val unreadCount: Int = 0 // jumlah pesan dari lawan bicara yang belum ditandai is_read
+    val unreadCount: Int = 0,
+    val otherIsVerified: Boolean = false,
+    val otherAvatarUrl: String? = null
 ) : Serializable
+data class FollowListEntry(
+    val user: User,
+    val isFollowedByMe: Boolean,
+    val followsMe: Boolean
+)
 
 data class Notification(
     val id: String,
-    val type: String, // "like", "comment", "follow", "mention" (lowercase, matches SQL schema)
+    val type: String,
     val senderId: String,
     val senderUsername: String,
     val senderAvatarColor: String,
@@ -82,5 +102,7 @@ data class Notification(
     val commentId: String?,
     val text: String,
     val createdAt: String,
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val senderIsVerified: Boolean = false,
+    val senderAvatarUrl: String? = null
 ) : Serializable

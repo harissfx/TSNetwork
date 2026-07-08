@@ -38,9 +38,10 @@ object SupabaseClient {
                 val originalRequest = chain.request()
                 val requestBuilder = originalRequest.newBuilder()
                     .addHeader("apikey", SUPABASE_ANON_KEY)
-                    .addHeader("Content-Type", "application/json")
+                if (originalRequest.header("Content-Type") == null) {
+                    requestBuilder.addHeader("Content-Type", "application/json")
+                }
 
-                // Add bearer auth if token exists
                 prefs.getToken()?.let { token ->
                     if (token.isNotEmpty()) {
                         requestBuilder.addHeader("Authorization", "Bearer $token")
@@ -53,7 +54,6 @@ object SupabaseClient {
                 override fun authenticate(route: Route?, response: Response): Request? {
                     val refreshToken = prefs.getRefreshToken() ?: return null
                     synchronized(this) {
-                        // Check if the token was already refreshed by another thread
                         val currentToken = prefs.getToken()
                         val requestToken = response.request.header("Authorization")?.replace("Bearer ", "")
                         if (currentToken != requestToken && currentToken != null) {
@@ -115,4 +115,3 @@ object SupabaseClient {
         return retrofit.create(SupabaseApiService::class.java)
     }
 }
-

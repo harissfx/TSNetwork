@@ -55,6 +55,6 @@ object ServiceLocator {
     }
 
     val userRepository: UserRepository by lazy {
-        UserRepositoryImpl(apiService, encryptedPreferencesManager)
+        UserRepositoryImpl(apiService, encryptedPreferencesManager, getContext())
     }
 }

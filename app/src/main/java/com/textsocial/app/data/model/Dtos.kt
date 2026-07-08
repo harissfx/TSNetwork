@@ -61,7 +61,10 @@ data class ProfileDto(
     val email: String?,
     val display_name: String?,
     val bio: String?,
-    val is_private: Boolean = false
+    val is_private: Boolean = false,
+    val is_verified: Boolean = false,
+    val avatar_url: String? = null,
+    val hide_following_list: Boolean = false
 )
 
 @JsonClass(generateAdapter = true)
@@ -82,6 +85,9 @@ data class StoryDto(
     val content: String,
     val created_at: String,
     val expires_at: String,
+    val background_color: String? = null,
+    val text_color: String? = null,
+    val font_family: String? = null,
     val users: ProfileDto? = null
 )
 
@@ -168,6 +174,21 @@ data class UpdateProfileRequest(
 )
 
 @JsonClass(generateAdapter = true)
+data class UpdateAvatarRequest(
+    val avatar_url: String
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateFollowListPrivacyRequest(
+    val hide_following_list: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+data class UpdateUsernameRequest(
+    val username: String
+)
+
+@JsonClass(generateAdapter = true)
 data class CreatePostRequest(
     val user_id: String,
     val content: String
@@ -211,7 +232,10 @@ data class FollowUserRequest(
 data class CreateStoryRequest(
     val user_id: String,
     val content: String,
-    val expires_at: String
+    val expires_at: String,
+    val background_color: String = "#000000",
+    val text_color: String = "#FFFFFF",
+    val font_family: String = "default"
 )
 
 @JsonClass(generateAdapter = true)
@@ -227,9 +251,6 @@ data class SendMessageRequest(
     val content: String
 )
 
-// Dipakai untuk memastikan baris `conversations` ada sebelum mengirim pesan pertama.
-// id harus dalam format "uuid_kecil_uuid_besar" (sama seperti yang dipakai di conversation_id
-// pesan), sesuai skema tabel `conversations` (id text primary key, tanpa default).
 @JsonClass(generateAdapter = true)
 data class UpsertConversationRequest(
     val id: String,
@@ -242,8 +263,6 @@ data class MarkAsReadRequest(
     val is_read: Boolean = true
 )
 
-// Dipakai untuk "hapus untuk semua orang": kontennya diganti placeholder & ditandai
-// is_deleted=true, jadi tetap ada jejak baris pesannya (bukan dihapus total dari DB).
 @JsonClass(generateAdapter = true)
 data class DeleteMessageRequest(
     val is_deleted: Boolean = true,

@@ -28,7 +28,12 @@ interface PostRepository {
 
 interface StoryRepository {
     suspend fun getStories(): Result<List<Story>>
-    suspend fun createStory(text: String): Result<Unit>
+    suspend fun createStory(
+        text: String,
+        backgroundColor: String = "#000000",
+        textColor: String = "#FFFFFF",
+        fontFamily: String = "default"
+    ): Result<Unit>
     suspend fun getStoryViews(storyId: String): Result<List<String>>
     suspend fun recordStoryView(storyId: String): Result<Unit>
     suspend fun deleteStory(storyId: String): Result<Unit>
@@ -47,13 +52,22 @@ interface UserRepository {
     suspend fun getProfile(userId: String): Result<User>
     suspend fun getProfileByUsername(username: String): Result<User>
     suspend fun updateProfile(displayName: String?, bio: String?, isPrivate: Boolean): Result<Unit>
+    suspend fun uploadAvatar(imageBytes: ByteArray): Result<String>
     suspend fun followUser(targetUserId: String): Result<Unit>
     suspend fun unfollowUser(targetUserId: String): Result<Unit>
     suspend fun isFollowing(targetUserId: String): Result<Boolean>
-    suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>> // (followersCount, followingCount)
+    suspend fun isFollowedBy(targetUserId: String): Result<Boolean>
+    suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>>
     suspend fun getFollowingUsers(): Result<List<User>>
+    suspend fun getFollowersOf(userId: String): Result<List<User>>
+    suspend fun getFollowingOf(userId: String): Result<List<User>>
+    suspend fun updateFollowListPrivacy(hideFollowingList: Boolean): Result<Unit>
+    suspend fun updateUsername(newUsername: String): Result<Unit>
     suspend fun searchUsers(query: String): Result<List<User>>
     suspend fun getNotifications(): Result<List<Notification>>
+    suspend fun markNotificationAsRead(notificationId: String): Result<Unit>
     suspend fun markNotificationsAsRead(): Result<Unit>
+    suspend fun deleteNotification(notificationId: String): Result<Unit>
+    suspend fun deleteNotifications(notificationIds: List<String>): Result<Unit>
     suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>>
 }

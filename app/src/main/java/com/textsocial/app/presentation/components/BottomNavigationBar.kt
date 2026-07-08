@@ -38,6 +38,13 @@ fun BottomNavigationBar(
         val isCreate = currentRoute == "create_post"
         val isNotifications = currentRoute == "notifications"
         val isProfile = currentRoute.startsWith("profile")
+        val navItemColors = NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            indicatorColor = MaterialTheme.colorScheme.tertiaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         NavigationBarItem(
             selected = isHome,
@@ -49,6 +56,7 @@ fun BottomNavigationBar(
                 )
             },
             label = { Text(stringResource(R.string.nav_feed)) },
+            colors = navItemColors,
             modifier = Modifier.testTag("nav_home")
         )
         NavigationBarItem(
@@ -61,6 +69,7 @@ fun BottomNavigationBar(
                 )
             },
             label = { Text(stringResource(R.string.nav_search)) },
+            colors = navItemColors,
             modifier = Modifier.testTag("nav_search")
         )
         NavigationBarItem(
@@ -73,6 +82,7 @@ fun BottomNavigationBar(
                 )
             },
             label = { Text(stringResource(R.string.nav_post)) },
+            colors = navItemColors,
             modifier = Modifier.testTag("nav_create_post")
         )
         NavigationBarItem(
@@ -95,6 +105,7 @@ fun BottomNavigationBar(
                 }
             },
             label = { Text(stringResource(R.string.nav_alerts)) },
+            colors = navItemColors,
             modifier = Modifier.testTag("nav_notifications")
         )
         NavigationBarItem(
@@ -107,6 +118,7 @@ fun BottomNavigationBar(
                 )
             },
             label = { Text(stringResource(R.string.nav_profile)) },
+            colors = navItemColors,
             modifier = Modifier.testTag("nav_profile")
         )
     }

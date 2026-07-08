@@ -26,7 +26,6 @@ fun LinkTextComponent(
     val annotatedString = buildAnnotatedString {
         append(text)
 
-        // 1. Match URLs
         val urlPattern = Pattern.compile("(https?://[\\w-]+(\\.[\\w-]+)+(/\\S*)?)")
         val urlMatcher = urlPattern.matcher(text)
         while (urlMatcher.find()) {
@@ -48,7 +47,6 @@ fun LinkTextComponent(
             )
         }
 
-        // 2. Match Hashtags (#topic)
         val hashtagPattern = Pattern.compile("#(\\w+)")
         val hashtagMatcher = hashtagPattern.matcher(text)
         while (hashtagMatcher.find()) {
@@ -70,7 +68,6 @@ fun LinkTextComponent(
             )
         }
 
-        // 3. Match Mentions (@username)
         val mentionPattern = Pattern.compile("@(\\w+)")
         val mentionMatcher = mentionPattern.matcher(text)
         while (mentionMatcher.find()) {

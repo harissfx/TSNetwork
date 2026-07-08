@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.SearchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -161,7 +162,6 @@ fun SearchScreen(
                     }
                 }
             } else {
-                // Results List
                 if (isLoading) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
@@ -187,15 +187,22 @@ fun SearchScreen(
                                 UserAvatarComponent(
                                     username = user.username,
                                     avatarColor = user.avatarColor,
+                                    avatarUrl = user.avatarUrl,
                                     size = AvatarSize.MEDIUM
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column {
-                                    Text(
-                                        text = user.displayName ?: user.username,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = user.displayName ?: user.username,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
+                                        )
+                                        if (user.isVerified) {
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            VerifiedBadge(size = 14.dp)
+                                        }
+                                    }
                                     Text(
                                         text = "@${user.username}",
                                         fontSize = 13.sp,

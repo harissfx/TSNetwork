@@ -19,10 +19,6 @@ fun AppNavGraph(
     val homeViewModel: HomeViewModel = viewModel { HomeViewModel() }
     val storyViewModel: StoryViewModel = viewModel { StoryViewModel() }
     val profileViewModel: ProfileViewModel = viewModel { ProfileViewModel(homeViewModel) }
-
-    // ViewModel milik tab-tab utama (Home/Search/CreatePost/Notifications/Profile) yang
-    // dulunya dibuat ulang tiap kali route-nya dimasuki, sekarang dibuat sekali di sini
-    // supaya tetap hidup selama MainScreen (HorizontalPager) tampil, mirip homeViewModel.
     val mainTabViewModel: MainTabViewModel = viewModel { MainTabViewModel() }
     val badgeViewModel: BadgeViewModel = viewModel { BadgeViewModel() }
     val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel() }
@@ -82,9 +78,6 @@ fun AppNavGraph(
             )
         }
 
-        // MAIN: satu destination yang membungkus 5 tab utama (Home, Search, Create Post,
-        // Notifications, Profile) di dalam HorizontalPager, supaya bisa pindah tab dengan
-        // geser kiri/kanan selain lewat BottomNavigationBar.
         composable(Routes.MAIN) {
             MainScreen(
                 mainTabViewModel = mainTabViewModel,
@@ -103,7 +96,8 @@ fun AppNavGraph(
                 onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
                 onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
                 onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                onNavigateToPostDetailFromNotif = { postId, commentId -> navController.navigate(Routes.postDetail(postId, commentId)) }
+                onNavigateToPostDetailFromNotif = { postId, commentId -> navController.navigate(Routes.postDetail(postId, commentId)) },
+                onNavigateToFollowList = { uid, uname, tab -> navController.navigate(Routes.followList(uid, uname, tab)) }
             )
         }
 
@@ -152,9 +146,6 @@ fun AppNavGraph(
                 onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
                 onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
                 onNavigateToPostDetail = { pid -> navController.navigate(Routes.postDetail(pid)) },
-                // Layar profil ini dibuka di atas MainScreen (mis. tap avatar orang lain).
-                // Kalau user tap ikon bottom nav di sini, kita pop balik ke MainScreen lalu
-                // pindahkan pager-nya ke tab yang sesuai.
                 onNavigateToHome = {
                     mainTabViewModel.goToTab(0)
                     navController.popBackStack(Routes.MAIN, inclusive = false)
@@ -175,7 +166,10 @@ fun AppNavGraph(
                     mainTabViewModel.goToTab(4)
                     navController.popBackStack(Routes.MAIN, inclusive = false)
                 },
-                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) }
+                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                onNavigateToFollowList = { uid, uname, tab ->
+                    navController.navigate(Routes.followList(uid, uname, tab))
+                }
             )
         }
 
@@ -223,6 +217,28 @@ fun AppNavGraph(
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }
                 }
+            )
+        }
+
+        composable(
+            route = Routes.FOLLOW_LIST,
+            arguments = listOf(
+                navArgument("userId") { type = NavType.StringType },
+                navArgument("username") { type = NavType.StringType },
+                navArgument("tab") { type = NavType.IntType; defaultValue = 0 }
+            )
+        ) { backStackEntry ->
+            val uid = backStackEntry.arguments?.getString("userId") ?: ""
+            val uname = backStackEntry.arguments?.getString("username") ?: ""
+            val tab = backStackEntry.arguments?.getInt("tab") ?: 0
+            val followListViewModel: FollowListViewModel = viewModel { FollowListViewModel() }
+            FollowListScreen(
+                viewModel = followListViewModel,
+                targetUserId = uid,
+                targetUsername = uname,
+                initialTab = tab,
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
             )
         }
     }

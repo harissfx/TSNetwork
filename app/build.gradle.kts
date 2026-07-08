@@ -68,7 +68,8 @@ secrets {
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
-  implementation("androidx.multidex:multidex:2.0.1")
+  // androidx.multidex dihapus -- minSdk 24 sudah didukung native multidex oleh ART,
+  // dan App.kt sudah tidak lagi extends MultiDexApplication.
   implementation(platform(libs.androidx.compose.bom))
   // implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)

@@ -38,8 +38,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.textsocial.app.di.ServiceLocator
 import com.textsocial.app.domain.model.Post
 import com.textsocial.app.presentation.components.AvatarSize
+import com.textsocial.app.presentation.components.ExpandableLinkText
 import com.textsocial.app.presentation.components.LinkTextComponent
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.HomeViewModel
 import com.textsocial.app.presentation.viewmodel.StoryViewModel
 import kotlinx.coroutines.launch
@@ -144,7 +146,6 @@ fun HomeScreen(
             }
         }
     ) { innerPadding ->
-
         PullToRefreshBox(
             isRefreshing = isLoading,
             onRefresh = {
@@ -191,7 +192,6 @@ fun HomeScreen(
                             val storyBubbleUsers = remember(stories) { stories.distinctBy { it.userId } }
                             val myUserId = remember { ServiceLocator.encryptedPreferencesManager.getUserId() }
                             val myUsername = remember { ServiceLocator.encryptedPreferencesManager.getUsername() }
-
                             val unseenRingBrush = Brush.sweepGradient(
                                 listOf(
                                     Color(0xFFFEDA75),
@@ -211,14 +211,12 @@ fun HomeScreen(
                             ) {
                                 items(storyBubbleUsers) { story ->
                                     val storyCountForUser = stories.count { it.userId == story.userId }
-                                    val isOwnStory = story.userId == myUserId
-                                    val hasUnseenStory = isOwnStory || myUsername == null ||
+                                    val hasUnseenStory = myUsername == null ||
                                             stories.any { it.userId == story.userId && !it.views.contains(myUsername) }
                                     Column(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         modifier = Modifier
                                             .clickable {
-
                                                 val firstIndexForUser = stories.indexOfFirst { it.userId == story.userId }
                                                 storyViewModel.setSelectedStoryIndex(firstIndexForUser)
                                                 onNavigateToStories()
@@ -241,6 +239,7 @@ fun HomeScreen(
                                                 UserAvatarComponent(
                                                     username = story.username,
                                                     avatarColor = story.avatarColor,
+                                                    avatarUrl = story.avatarUrl,
                                                     size = AvatarSize.MEDIUM,
                                                     modifier = Modifier.background(
                                                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -253,28 +252,23 @@ fun HomeScreen(
                                                     color = MaterialTheme.colorScheme.primary,
                                                     shape = androidx.compose.foundation.shape.CircleShape,
                                                     modifier = Modifier
-                                                        .align(Alignment.BottomEnd)
+                                                        .align(Alignment.TopEnd)
                                                         .size(16.dp)
                                                 ) {
-                                                    Box(contentAlignment = Alignment.Center) {
+                                                    Box(
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
                                                         Text(
                                                             text = storyCountForUser.toString(),
                                                             fontSize = 9.sp,
+                                                            lineHeight = 9.sp,
                                                             color = MaterialTheme.colorScheme.onPrimary
                                                         )
                                                     }
                                                 }
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = story.username,
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.width(60.dp)
-                                        )
                                     }
                                 }
                             }
@@ -284,7 +278,6 @@ fun HomeScreen(
                             )
                         }
                     }
-
                     if (activeHashtag == null) {
                         item {
                             Row(
@@ -301,7 +294,12 @@ fun HomeScreen(
                                     FilterChip(
                                         selected = selected,
                                         onClick = { homeViewModel.setFeedMode(mode) },
-                                        label = { Text(label, fontSize = 13.sp) }
+                                        label = { Text(label, fontSize = 13.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                            selectedLeadingIconColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                        )
                                     )
                                 }
                             }
@@ -335,8 +333,7 @@ fun HomeScreen(
                                         modifier = Modifier.size(48.dp)
                                     )
                                     Spacer(modifier = Modifier.height(16.dp))
-                                    Text(
-                                        "No posts found yet. Be the first to share!",
+                                    Text(stringResource(R.string.feed_kosong),
                                         color = MaterialTheme.colorScheme.outline,
                                         fontSize = 14.sp
                                     )
@@ -404,16 +401,23 @@ fun PostItem(
                     UserAvatarComponent(
                         username = post.username,
                         avatarColor = post.userAvatarColor,
+                        avatarUrl = post.userAvatarUrl,
                         size = AvatarSize.COMPACT
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text(
-                            text = post.displayName ?: post.username,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = post.displayName ?: post.username,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (post.isVerified) {
+                                Spacer(modifier = Modifier.width(3.dp))
+                                VerifiedBadge(size = 14.dp)
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "@${post.username}",
@@ -443,9 +447,7 @@ fun PostItem(
             }
 
             Spacer(modifier = Modifier.height(4.dp))
-
-            // Body
-            LinkTextComponent(
+            ExpandableLinkText(
                 text = post.text,
                 style = TextStyle(
                     fontSize = 15.sp,
@@ -456,14 +458,11 @@ fun PostItem(
             )
 
             Spacer(modifier = Modifier.height(4.dp))
-
-            // Footer Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Like Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -483,8 +482,6 @@ fun PostItem(
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
-
-                // Comment Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -505,7 +502,6 @@ fun PostItem(
                     )
                 }
 
-                // Share Icon
                 IconButton(onClick = {
                     try {
                         val sendIntent = Intent().apply {
@@ -516,7 +512,6 @@ fun PostItem(
                         val shareIntent = Intent.createChooser(sendIntent, null)
                         context.startActivity(shareIntent)
                     } catch (e: Exception) {
-                        // ignore or toast
                     }
                 }) {
                     Icon(

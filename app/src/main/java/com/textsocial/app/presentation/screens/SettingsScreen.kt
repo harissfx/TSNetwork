@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.textsocial.app.R
 import com.textsocial.app.di.ServiceLocator
 import com.textsocial.app.util.LocaleManager
+import com.textsocial.app.util.ThemeManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,12 +35,15 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     var isPrivateAccount by remember { mutableStateOf(false) }
+    var hideFollowingList by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     var currentDisplayName by remember { mutableStateOf<String?>(null) }
     var currentBio by remember { mutableStateOf<String?>(null) }
     var isLoadingProfile by remember { mutableStateOf(true) }
     var selectedLanguage by remember { mutableStateOf(LocaleManager.getSelectedLanguage(context)) }
+    val selectedTheme by ThemeManager.themeMode
 
     LaunchedEffect(Unit) {
         val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
@@ -47,6 +51,7 @@ fun SettingsScreen(
             val result = ServiceLocator.userRepository.getProfile(myId)
             result.onSuccess { user ->
                 isPrivateAccount = user.isPrivate
+                hideFollowingList = user.hideFollowingList
                 currentDisplayName = user.displayName
                 currentBio = user.bio
             }
@@ -141,6 +146,44 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 12.dp)
+                            ) {
+                                Icon(Icons.Default.VisibilityOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(stringResource(R.string.hide_following_list_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                    Text(stringResource(R.string.hide_following_list_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                            Switch(
+                                checked = hideFollowingList,
+                                enabled = !isLoadingProfile,
+                                onCheckedChange = { newValue ->
+                                    val previousValue = hideFollowingList
+                                    hideFollowingList = newValue
+                                    coroutineScope.launch {
+                                        val result = ServiceLocator.userRepository.updateFollowListPrivacy(newValue)
+                                        result.onFailure {
+                                            hideFollowingList = previousValue
+                                        }
+                                    }
+                                }
+                            )
+                        }
+
+                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
                                 .clickable { showPasswordDialog = true }
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -196,6 +239,50 @@ fun SettingsScreen(
                             Column {
                                 Text(stringResource(R.string.language_row_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
                                 Text(stringResource(R.string.language_row_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null)
+                    }
+                }
+
+                Text(
+                    text = stringResource(R.string.section_appearance),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showThemeDialog = true }
+                            .testTag("theme_row")
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp)
+                        ) {
+                            val themeIcon = when (selectedTheme) {
+                                ThemeManager.MODE_LIGHT -> Icons.Default.LightMode
+                                ThemeManager.MODE_DARK -> Icons.Default.DarkMode
+                                else -> Icons.Default.BrightnessMedium
+                            }
+                            Icon(themeIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(stringResource(R.string.theme_row_title), fontWeight = FontWeight.Medium, fontSize = 15.sp)
+                                Text(stringResource(R.string.theme_row_desc), fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                             }
                         }
                         Icon(Icons.Default.ChevronRight, contentDescription = null)
@@ -300,6 +387,53 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(stringResource(R.string.cancel_button))
+                }
+            }
+        )
+    }
+
+    if (showThemeDialog) {
+        val themeOptions = listOf(
+            ThemeManager.MODE_SYSTEM to stringResource(R.string.theme_option_system),
+            ThemeManager.MODE_LIGHT to stringResource(R.string.theme_option_light),
+            ThemeManager.MODE_DARK to stringResource(R.string.theme_option_dark)
+        )
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text(stringResource(R.string.theme_row_title)) },
+            text = {
+                Column {
+                    themeOptions.forEach { (mode, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selectedTheme == mode,
+                                    onClick = {
+                                        ThemeManager.setSelectedTheme(context, mode)
+                                        showThemeDialog = false
+                                    }
+                                )
+                                .testTag("theme_option_$mode")
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedTheme == mode,
+                                onClick = {
+                                    ThemeManager.setSelectedTheme(context, mode)
+                                    showThemeDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(label, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
                     Text(stringResource(R.string.cancel_button))
                 }
             }

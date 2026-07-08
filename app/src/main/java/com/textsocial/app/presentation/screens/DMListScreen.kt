@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import com.textsocial.app.R
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.DMListViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,13 +85,13 @@ fun DMListScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "No private chats yet",
+                            text = stringResource(R.string.dm_kosong),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Navigate to profiles to start messaging",
+                            text = stringResource(R.string.dm_kosongdesc),
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -110,6 +111,7 @@ fun DMListScreen(
                             UserAvatarComponent(
                                 username = conversation.otherUsername,
                                 avatarColor = conversation.otherAvatarColor,
+                                avatarUrl = conversation.otherAvatarUrl,
                                 size = AvatarSize.MEDIUM
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -119,12 +121,18 @@ fun DMListScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = conversation.otherUsername,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = conversation.otherUsername,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        if (conversation.otherIsVerified) {
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            VerifiedBadge(size = 14.dp)
+                                        }
+                                    }
                                     Text(
                                         text = conversation.lastMessageTime?.let {
                                             com.textsocial.app.util.TimeUtils.timeAgoShort(context, it)
@@ -149,9 +157,6 @@ fun DMListScreen(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    // Chat ini sudah kelihatan (masuk daftar DMListScreen), tapi
-                                    // isi obrolannya belum benar-benar dibuka -- jadi tetap dianggap
-                                    // "belum dibaca" sampai user tap masuk ke DMChatScreen-nya.
                                     if (hasUnread) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Box(

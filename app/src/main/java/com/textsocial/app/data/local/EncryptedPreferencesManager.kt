@@ -8,7 +8,6 @@ import androidx.security.crypto.MasterKey
 class EncryptedPreferencesManager(context: Context) {
 
     fun preInitialize() {
-        // Access sharedPreferences on background thread to force lazy initialization
         val unused = sharedPreferences
     }
 

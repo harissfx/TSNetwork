@@ -17,11 +17,11 @@ object Routes {
     const val NOTIFICATIONS = "notifications"
     const val SEARCH = "search"
     const val SETTINGS = "settings"
-
-    // commentId opsional: dipakai supaya PostDetailScreen bisa auto-scroll + highlight
-    // ke komentar tertentu kalau dibuka dari notifikasi komentar/reply.
+    const val FOLLOW_LIST = "follow_list/{userId}/{username}?tab={tab}"
     fun postDetail(postId: String, commentId: String? = null): String =
         if (commentId != null) "post_detail/$postId?commentId=$commentId" else "post_detail/$postId"
     fun profile(userId: String): String = "profile/$userId"
     fun dmChat(userId: String, username: String): String = "dm_chat/$userId/$username"
+    fun followList(userId: String, username: String, tab: Int = 0): String =
+        "follow_list/$userId/$username?tab=$tab"
 }

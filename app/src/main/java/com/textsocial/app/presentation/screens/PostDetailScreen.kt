@@ -41,6 +41,7 @@ import com.textsocial.app.domain.model.User
 import com.textsocial.app.presentation.components.AvatarSize
 import com.textsocial.app.presentation.components.LinkTextComponent
 import com.textsocial.app.presentation.components.UserAvatarComponent
+import com.textsocial.app.presentation.components.VerifiedBadge
 import com.textsocial.app.presentation.viewmodel.PostDetailViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -122,16 +123,8 @@ fun PostDetailScreen(
 
     var expandedRoots by remember { mutableStateOf(setOf<String>()) }
     var highlightedCommentId by remember { mutableStateOf(highlightCommentId) }
-
-    // TextFieldValue lokal supaya bisa tahu posisi kursor, sama seperti di
-    // CreatePostScreen, dibutuhkan untuk deteksi "sedang mengetik @siapa" pada
-    // kolom komentar dan untuk menyisipkan username terpilih di posisi yang tepat.
     var commentFieldValue by remember { mutableStateOf(TextFieldValue(commentText)) }
     var mentionSuggestions by remember { mutableStateOf<List<User>>(emptyList()) }
-
-    // Sinkronkan balik ketika commentText berubah dari luar (mis. setelah komentar
-    // terkirim, ViewModel mereset teksnya ke ""), tapi jangan timpa kalau memang
-    // user sendiri yang baru saja mengetik (nilainya sudah sama).
     LaunchedEffect(commentText) {
         if (commentText != commentFieldValue.text) {
             commentFieldValue = TextFieldValue(commentText, TextRange(commentText.length))
@@ -154,10 +147,8 @@ fun PostDetailScreen(
             mentionSuggestions = emptyList()
             return@LaunchedEffect
         }
-        delay(250) // debounce ringan biar gak nembak API tiap huruf
+        delay(250)
         val result = if (activeMentionQuery.isBlank()) {
-            // Baru ketik "@" tanpa huruf apa pun -> tampilkan akun "terdekat"
-            // (yang di-follow user), BUKAN seluruh isi database.
             ServiceLocator.userRepository.getFollowingUsers()
         } else {
             ServiceLocator.userRepository.searchUsers(activeMentionQuery)
@@ -271,11 +262,18 @@ fun PostDetailScreen(
                                         UserAvatarComponent(
                                             username = user.username,
                                             avatarColor = user.avatarColor,
+                                            avatarUrl = user.avatarUrl,
                                             size = AvatarSize.COMPACT
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Column {
-                                            Text(text = user.username, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = user.username, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                if (user.isVerified) {
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    VerifiedBadge(size = 13.dp)
+                                                }
+                                            }
                                             if (!user.displayName.isNullOrBlank()) {
                                                 Text(
                                                     text = user.displayName,
@@ -351,7 +349,6 @@ fun PostDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    // Main Post Card
                     post?.let { currentPost ->
                         item {
                             Column(
@@ -366,15 +363,22 @@ fun PostDetailScreen(
                                     UserAvatarComponent(
                                         username = currentPost.username,
                                         avatarColor = currentPost.userAvatarColor,
+                                        avatarUrl = currentPost.userAvatarUrl,
                                         size = AvatarSize.MEDIUM
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
-                                        Text(
-                                            text = currentPost.displayName ?: currentPost.username,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = currentPost.displayName ?: currentPost.username,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.sp
+                                            )
+                                            if (currentPost.isVerified) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                VerifiedBadge(size = 15.dp)
+                                            }
+                                        }
                                         Text(
                                             text = "@${currentPost.username}",
                                             fontSize = 13.sp,
@@ -464,11 +468,9 @@ fun PostDetailScreen(
                             }
                         }
                     }
-
-                    // Comments Section Heading
                     item {
                         Text(
-                            text = "Replies",
+                            text = stringResource(R.string.rpl_title),
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -485,7 +487,7 @@ fun PostDetailScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No replies yet. Start the conversation!",
+                                    text = stringResource(R.string.rpl_postkos),
                                     color = MaterialTheme.colorScheme.outline,
                                     fontSize = 14.sp
                                 )
@@ -565,8 +567,6 @@ private fun CommentRow(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val startPadding = if (isReply) 48.dp else 16.dp
-    // Fix: sorotan singkat untuk komentar yang dituju dari notifikasi, supaya jelas
-    // komentar mana yang dimaksud tanpa harus baca satu-satu.
     val highlightColor by animateColorAsState(
         targetValue = if (isHighlighted) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
         label = "comment_highlight"
@@ -590,14 +590,19 @@ private fun CommentRow(
                 UserAvatarComponent(
                     username = comment.username,
                     avatarColor = comment.avatarColor,
+                    avatarUrl = comment.avatarUrl,
                     size = if (isReply) AvatarSize.COMPACT else AvatarSize.COMPACT
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = comment.username,
+                    text = comment.displayName ?: comment.username,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )
+                if (comment.isVerified) {
+                    Spacer(modifier = Modifier.width(3.dp))
+                    VerifiedBadge(size = 13.dp)
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = com.textsocial.app.util.TimeUtils.timeAgoShort(context, comment.createdAt),
@@ -647,8 +652,6 @@ private fun CommentRow(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Fix #4: komentar cuma punya tombol Like (tanpa dislike/reaksi lain), plus
-        // tombol Reply untuk fix #1.
         Row(
             modifier = Modifier.padding(start = 42.dp),
             verticalAlignment = Alignment.CenterVertically

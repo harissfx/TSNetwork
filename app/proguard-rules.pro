@@ -13,6 +13,9 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
+# --- FIX: Missing classes (Google Error Prone) ---
+-dontwarn com.google.errorprone.annotations.**
+
 # --- OkHttp ProGuard Rules ---
 -keepattributes Signature, *Annotation*, EnclosingMethod, InnerClasses
 -keepclassmembers class okhttp3.internal.publicsuffix.PublicSuffixDatabase {
@@ -59,4 +62,3 @@
 # --- Jetpack Compose / Kotlin Serialization / Lifecycle ---
 -keep class androidx.compose.** { *; }
 -dontwarn androidx.compose.**
-

@@ -1,28 +1,35 @@
 <resources>
     <string name="app_name">OpenText</string>
-
-    <!-- Settings screen -->
     <string name="settings_title">Pengaturan Aplikasi</string>
     <string name="go_back">Kembali</string>
     <string name="section_account_privacy">Akun &amp; Privasi</string>
     <string name="private_account_title">Akun Privat</string>
     <string name="private_account_desc">Hanya pengguna yang disetujui bisa melihat postinganmu</string>
+    <string name="hide_following_list_title">Sembunyikan Daftar Following</string>
+    <string name="hide_following_list_desc">Orang lain tidak bisa melihat siapa yang kamu ikuti</string>
     <string name="change_password_title">Ubah Kata Sandi</string>
     <string name="change_password_desc">Perbarui kredensialmu secara berkala</string>
-
+    <string name="follow_back_button">Ikuti Balik</string>
+    <string name="follows_you_tag">Mengikuti Anda</string>
+    <string name="no_followers_yet">Belum ada pengikut</string>
+    <string name="not_following_anyone_yet">Belum mengikuti siapa pun</string>
+    <string name="following_list_hidden_message">Akun ini menyembunyikan siapa yang mereka ikuti</string>
     <string name="section_language">Bahasa</string>
     <string name="language_row_title">Bahasa Aplikasi</string>
     <string name="language_row_desc">Pilih tampilan bahasa aplikasi</string>
     <string name="language_option_system">Ikuti bahasa perangkat</string>
     <string name="language_option_indonesian">Bahasa Indonesia</string>
     <string name="language_option_english">Inggris</string>
-
+    <string name="section_appearance">Tampilan</string>
+    <string name="theme_row_title">Tema Aplikasi</string>
+    <string name="theme_row_desc">Ganti antara mode terang dan gelap</string>
+    <string name="theme_option_system">Ikuti tema perangkat</string>
+    <string name="theme_option_light">Terang</string>
+    <string name="theme_option_dark">Gelap</string>
     <string name="section_about">Tentang</string>
     <string name="app_version_label">OpenText v1.0.0</string>
     <string name="app_description">Platform media sosial berbasis teks open-source, dibangun dengan Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, dan pembatasan laju Upstash Redis.</string>
-
     <string name="logout_button">Keluar dari Sesi</string>
-
     <string name="update_password_dialog_title">Perbarui Kata Sandi</string>
     <string name="password_encrypted_note">Semua input kata sandi dienkripsi saat dikirim.</string>
     <string name="new_password_label">Kata Sandi Baru</string>
@@ -31,8 +38,6 @@
     <string name="ok_button">OK</string>
     <string name="update_button">Perbarui</string>
     <string name="cancel_button">Batal</string>
-
-    <!-- Bottom navigation -->
     <string name="nav_feed">Beranda</string>
     <string name="nav_search">Cari</string>
     <string name="nav_post">Buat</string>
@@ -91,6 +96,13 @@
     <string name="story_desc">Apa yang sedang Anda pikirkan? Hingga 280 karakter teks...</string>
     <string name="view_story">%1$s dilihat</string>
     <string name="story_view">Tayangan Cerita</string>
+    <string name="story_background_label">Latar Belakang</string>
+    <string name="story_text_color_label">Warna Teks</string>
+    <string name="story_font_label">Font</string>
+    <string name="font_option_default">Standar</string>
+    <string name="font_option_serif">Serif</string>
+    <string name="font_option_monospace">Monospace</string>
+    <string name="font_option_cursive">Kursif</string>
     <string name="dm_title">Pesan Langsung</string>
     <string name="dm_entry">Tulis pesan...</string>
     <string name="pesan_dihapus">Pesan ini telah dihapus</string>
@@ -103,4 +115,24 @@
     <string name="notif_started_following">mulai mengikutimu</string>
     <string name="notif_mentioned_you">menyebutmu di sebuah postingan</string>
     <string name="notif_generic">mengirimimu notifikasi</string>
+    <string name="no_view">Belum ada tayangan yang tercatat.</string>
+    <string name="rpl_title">Balasan</string>
+    <string name="rpl_postkos">Belum ada tanggapan. Mulai percakapan!</string>
+    <string name="ava_title">Ketuk foto untuk mengganti dari galeri.</string>
+    <string name="war_ava">Hanya huruf, angka, dan underscore, minimal 3 karakter.</string>
+    <string name="sv_ava">Simpan</string>
+    <string name="notif_del">Notifikasi yang dipilih akan dihapus permanen dan tidak bisa dikembalikan.</string>
+    <string name="del_title">Hapus %1$s notifikasi?</string>
+    <string name="priv_title">Akun ini privat.</string>
+    <string name="priv_desc">Follow akun ini untuk melihat postingan mereka.</string>
+    <string name="error_upload_photo_failed">Gagal upload foto: %1$s</string>
+    <string name="error_save_profile_photo_failed">Gagal menyimpan foto profil: %1$s</string>
+    <string name="error_username_min_length">Username minimal 3 karakter</string>
+    <string name="error_username_invalid_chars">Username hanya boleh huruf, angka, dan underscore</string>
+    <string name="error_username_taken">Username sudah dipakai orang lain</string>
+    <string name="error_username_update_failed">Gagal mengubah username: %1$s</string>
+    <string name="dm_kosong">Belum ada obrolan pribadi</string>
+    <string name="dm_kosongdesc">Buka profil untuk mulai mengirim pesan</string>
+    <string name="feed_kosong">Belum ada postingan. Jadilah yang pertama membagikannya!</string>
+    <string name="prof_kosong">Belum ada kiriman yang dibagikan oleh pengguna ini.</string>
 </resources>

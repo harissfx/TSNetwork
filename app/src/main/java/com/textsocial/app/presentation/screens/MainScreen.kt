@@ -47,7 +47,8 @@ fun MainScreen(
     onNavigateToChat: (String, String) -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToPostDetailFromNotif: (String, String?) -> Unit
+    onNavigateToPostDetailFromNotif: (String, String?) -> Unit,
+    onNavigateToFollowList: (userId: String, username: String, tab: Int) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { 5 })
     val currentTab by mainTabViewModel.currentTab.collectAsState()
@@ -75,7 +76,7 @@ fun MainScreen(
         }
 
         if (currentTab == TAB_NOTIFICATIONS && previousTab != TAB_NOTIFICATIONS) {
-            notificationViewModel.loadAndMarkAsRead(onDone = { badgeViewModel.markNotificationsRead() })
+            notificationViewModel.loadNotifications()
         }
         previousTab = currentTab
     }
@@ -158,6 +159,8 @@ fun MainScreen(
                     onNavigateToProfileMe = { mainTabViewModel.goToTab(TAB_PROFILE) },
                     onNavigateToProfile = onNavigateToProfile,
                     onNavigateToPostDetail = onNavigateToPostDetailFromNotif,
+                    onNotificationRead = { badgeViewModel.decrementUnreadNotifications() },
+                    onAllNotificationsRead = { badgeViewModel.clearUnreadNotifications() },
                     showBottomBar = false
                 )
 
@@ -174,6 +177,7 @@ fun MainScreen(
                     onNavigateToNotifications = { mainTabViewModel.goToTab(TAB_NOTIFICATIONS) },
                     onNavigateToProfileMe = { /* sudah di tab ini */ },
                     onNavigateToSettings = onNavigateToSettings,
+                    onNavigateToFollowList = onNavigateToFollowList,
                     showBottomBar = false
                 )
             }

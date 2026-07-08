@@ -15,15 +15,9 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 ## 💾 1. SKEMA DATABASE & KEBIJAKAN SUPABASE (SQL LENGKAP)
 
 > [!WARNING]
-> **UPDATE: Fitur Badge Notifikasi & Pesan Belum Dibaca.**
-> Kalau proyek Supabase kamu **sudah pernah** menjalankan skrip SQL lengkap di bawah ini sebelumnya, **JANGAN jalankan ulang seluruh skrip itu** -- bagian atasnya berisi `drop table ... cascade` yang akan menghapus semua data yang sudah ada.
-> Cukup jalankan **satu policy tambahan** ini saja di SQL Editor (fitur mark-as-read notifikasi butuh izin UPDATE yang sebelumnya belum ada di tabel `notifications`):
-> ```sql
-> create policy "Allow marking own notifications as read" on public.notifications for update
->     using (auth.uid() = recipient_id)
->     with check (auth.uid() = recipient_id);
-> ```
-> Untuk proyek yang **baru dibuat dari nol**, policy ini sudah otomatis termasuk di dalam skrip lengkap di bawah, jadi tidak perlu langkah tambahan apa pun.
+> **Kalau proyek Supabase kamu SUDAH PERNAH menjalankan skrip lengkap ini sebelumnya, JANGAN jalankan ulang seluruh skrip di bawah** — bagian atasnya berisi `drop table ... cascade` yang akan menghapus semua data yang sudah ada.
+> Kalau kamu cuma perlu menyusulkan update-update terbaru (badge notifikasi, kustomisasi story, badge verifikasi, upload foto profil, privasi following, akun privat beneran berfungsi) ke proyek yang sudah jalan, jalankan file `migration_consolidated.sql` saja — isinya aman (tidak menghapus data) dan bisa dijalankan berkali-kali.
+> Untuk proyek yang **baru dibuat dari nol**, semua fitur di atas sudah otomatis termasuk di dalam skrip lengkap di bawah, jadi tidak perlu langkah tambahan apa pun.
 
 > [!IMPORTANT]
 > **CARA MENJALANKAN KODE DI SUPABASE:**
@@ -44,6 +38,7 @@ drop table if exists public.messages cascade;
 drop table if exists public.conversations cascade;
 drop table if exists public.follows cascade;
 drop table if exists public.likes cascade;
+drop table if exists public.comment_likes cascade;
 drop table if exists public.comments cascade;
 drop table if exists public.story_views cascade;
 drop table if exists public.stories cascade;
@@ -58,7 +53,10 @@ create table public.profiles (
     display_name text,
     bio text,
     avatar_color text not null default '#FF5722',
+    avatar_url text,
     is_private boolean default false,
+    is_verified boolean not null default false,
+    hide_following_list boolean not null default false,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -67,7 +65,7 @@ create table public.profiles (
 create table public.posts (
     id uuid default uuid_generate_v4() primary key,
     user_id uuid references public.profiles(id) on delete cascade not null,
-    content text not null check (char_length(content) <= 500),
+    content text not null check (char_length(content) <= 3000),
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     likes_count integer default 0 not null,
     comments_count integer default 0 not null
@@ -79,7 +77,13 @@ create table public.stories (
     user_id uuid references public.profiles(id) on delete cascade not null,
     content text not null check (char_length(content) <= 280),
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-    expires_at timestamp with time zone not null
+    expires_at timestamp with time zone not null,
+    -- Kustomisasi tampilan story yang dipilih pengguna saat membuat: warna latar,
+    -- warna teks, dan font. Defaultnya hitam/putih/default, sama seperti tampilan
+    -- story sebelum fitur kustomisasi ini ada.
+    background_color text not null default '#000000',
+    text_color text not null default '#FFFFFF',
+    font_family text not null default 'default'
 );
 
 -- 4. TABEL RIWAYAT DILIHAT UNTUK CERITA (STORY VIEWS)
@@ -329,6 +333,28 @@ create trigger on_message_before_insert
 before insert on public.messages
 for each row execute function public.handle_message_before_insert();
 
+-- 9. Cegah user biasa mengubah status verifikasi (is_verified) miliknya sendiri
+--    lewat app, walaupun policy "Allow owners to edit profile" mengizinkan
+--    mereka update baris profil sendiri. Perubahan is_verified hanya "nempel"
+--    kalau dilakukan dari SQL Editor / Table Editor Supabase (bukan lewat
+--    request API yang membawa JWT role 'authenticated').
+create or replace function public.prevent_self_verification()
+returns trigger as $$
+begin
+    if new.is_verified is distinct from old.is_verified then
+        if auth.role() = 'authenticated' then
+            new.is_verified := old.is_verified;
+        end if;
+    end if;
+    return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists enforce_verified_badge on public.profiles;
+create trigger enforce_verified_badge
+before update on public.profiles
+for each row execute function public.prevent_self_verification();
+
 -- SINKRONISASI: Salin data pengguna yang sudah terlanjur mendaftar tetapi belum memiliki profil
 insert into public.profiles (id, username, email, display_name, avatar_color, bio, is_private)
 select 
@@ -362,8 +388,23 @@ alter table public.notifications enable row level security;
 create policy "Allow public profile reading" on public.profiles for select using (true);
 create policy "Allow owners to edit profile" on public.profiles for update using (auth.uid() = id);
 
--- POSTINGAN: Semua orang bisa membaca postingan; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
-create policy "Allow public reading of posts" on public.posts for select using (true);
+-- POSTINGAN: Post terlihat sesuai privasi akun (lihat catatan di bawah); hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Posts visible respecting private accounts" on public.posts
+for select
+using (
+    -- Pemilik post selalu bisa lihat post-nya sendiri
+    auth.uid() = user_id
+    -- Atau akun penulis post memang tidak privat
+    or exists (
+        select 1 from public.profiles p
+        where p.id = posts.user_id and coalesce(p.is_private, false) = false
+    )
+    -- Atau yang melihat sudah mem-follow penulis post
+    or exists (
+        select 1 from public.follows f
+        where f.follower_id = auth.uid() and f.following_id = posts.user_id
+    )
+);
 create policy "Allow authenticated creation of posts" on public.posts for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of posts" on public.posts for delete using (auth.uid() = user_id);
 
@@ -376,8 +417,27 @@ create policy "Allow owner deletion of stories" on public.stories for delete usi
 create policy "Allow public reading of story views" on public.story_views for select using (true);
 create policy "Allow authenticated insertion of story views" on public.story_views for insert with check (auth.role() = 'authenticated');
 
--- KOMENTAR: Semua orang bisa membaca komentar; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
-create policy "Allow public reading of comments" on public.comments for select using (true);
+-- KOMENTAR: Komentar ikut aturan privasi post induknya (lihat catatan di bawah); hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+-- Kalau post induknya tidak boleh dilihat (akun privat & bukan follower), komentarnya juga tidak boleh kebaca.
+create policy "Comments visible respecting private accounts" on public.comments
+for select
+using (
+    exists (
+        select 1 from public.posts po
+        where po.id = comments.post_id
+        and (
+            auth.uid() = po.user_id
+            or exists (
+                select 1 from public.profiles p
+                where p.id = po.user_id and coalesce(p.is_private, false) = false
+            )
+            or exists (
+                select 1 from public.follows f
+                where f.follower_id = auth.uid() and f.following_id = po.user_id
+            )
+        )
+    )
+);
 create policy "Allow authenticated creation of comments" on public.comments for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of comments" on public.comments for delete using (auth.uid() = user_id);
 
@@ -391,8 +451,22 @@ create policy "Allow public reading of likes" on public.likes for select using (
 create policy "Allow authenticated creation of likes" on public.likes for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of likes" on public.likes for delete using (auth.uid() = user_id);
 
--- MENGIKUTI (FOLLOWS): Semua orang bisa melihat status mengikuti; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
-create policy "Allow public reading of follows" on public.follows for select using (true);
+-- MENGIKUTI (FOLLOWS): Daftar followers selalu terbuka; daftar following mengikuti pengaturan privasi hide_following_list; hanya pengguna terautentikasi yang bisa membuat; pemilik yang bisa menghapus
+create policy "Follows readable respecting following-list privacy"
+on public.follows for select
+using (
+    -- Selalu boleh lihat following list milik sendiri
+    auth.uid() = follower_id
+    -- Selalu boleh lihat siapa saja yang mengikuti diri sendiri (followers list
+    -- TIDAK termasuk pengaturan privasi ini)
+    or auth.uid() = following_id
+    -- Atau pemilik akun follower_id memang tidak menyembunyikan following list-nya
+    or exists (
+        select 1 from public.profiles p
+        where p.id = follows.follower_id
+        and coalesce(p.hide_following_list, false) = false
+    )
+);
 create policy "Allow authenticated creation of follows" on public.follows for insert with check (auth.role() = 'authenticated');
 create policy "Allow owner deletion of follows" on public.follows for delete using (auth.uid() = follower_id);
 
@@ -450,6 +524,47 @@ create policy "Allow marking own notifications as read" on public.notifications 
 grant select on all tables in schema public to anon, authenticated;
 grant insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated, anon;
+
+-- 9. STORAGE: BUCKET FOTO PROFIL (AVATARS)
+-- Bucket dibuat PUBLIC supaya foto bisa ditampilkan langsung lewat URL publik
+-- tanpa perlu signed URL. Konvensi nama file: "{user_id}/profile.jpg".
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+-- Siapa saja boleh MELIHAT (bucket public)
+drop policy if exists "Avatar public read" on storage.objects;
+create policy "Avatar public read"
+on storage.objects for select
+using (bucket_id = 'avatars');
+
+-- User yang login HANYA boleh upload/ubah/hapus file miliknya sendiri
+drop policy if exists "Users can upload their own avatar" on storage.objects;
+create policy "Users can upload their own avatar"
+on storage.objects for insert
+to authenticated
+with check (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users can update their own avatar" on storage.objects;
+create policy "Users can update their own avatar"
+on storage.objects for update
+to authenticated
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy if exists "Users can delete their own avatar" on storage.objects;
+create policy "Users can delete their own avatar"
+on storage.objects for delete
+to authenticated
+using (
+    bucket_id = 'avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+);
 ```
 
 ---
@@ -463,7 +578,7 @@ Klien Retrofit Android berkomunikasi dengan API Supabase menggunakan endpoint RE
   - `POST /auth/v1/token?grant_type=password` (Melakukan login dan mengembalikan token JWT)
 - **Endpoint Database (CRUD Postgrest):**
   - `GET /rest/v1/posts` (Mengambil daftar postingan terbaru)
-  - `POST /rest/v1/posts` (Membuat postingan baru hingga maksimal 500 karakter)
+  - `POST /rest/v1/posts` (Membuat postingan baru hingga maksimal 3000 karakter)
   - `GET /rest/v1/profiles?id=eq.{id}` (Mengambil rincian profil pengguna)
   - `PATCH /rest/v1/profiles?id=eq.{id}` (Memperbarui biografi dan nama tampilan pengguna)
   - `GET /rest/v1/messages` (Mengambil riwayat percakapan direct message)
