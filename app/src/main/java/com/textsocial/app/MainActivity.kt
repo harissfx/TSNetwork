@@ -21,8 +21,6 @@ import com.textsocial.app.util.ThemeManager
 
 class MainActivity : ComponentActivity() {
 
-    // Holds the target route for a tapped push notification; AppNavGraph consumes it once
-    // the user actually lands on Routes.MAIN (can't navigate there before auth resolves).
     private var pendingDeepLinkRoute by mutableStateOf<String?>(null)
 
     private val notificationPermissionLauncher =
@@ -56,8 +54,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // MainActivity is launchMode="singleTop", so tapping a notification while the app is
-    // already running/backgrounded delivers here instead of creating a new instance.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -70,7 +66,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Turns a notification tap's Intent extras into an in-app route, or null if there's nothing to deep-link to. */
     private fun routeFromNotificationIntent(intent: Intent?): String? {
         val type = intent?.getStringExtra(NotificationHelper.EXTRA_NOTIF_TYPE) ?: return null
         val postId = intent.getStringExtra(NotificationHelper.EXTRA_NOTIF_POST_ID)

@@ -21,7 +21,6 @@ object ServiceLocator {
                 val unusedService = apiService
                 val unusedAuth = authRepository
             } catch (e: Exception) {
-                // Ignore any startup exceptions to prevent app crash
             }
         }
     }

@@ -243,9 +243,6 @@ class HomeViewModel : ViewModel() {
     private val _feedMode = MutableStateFlow(FeedMode.FOR_YOU)
     val feedMode = _feedMode.asStateFlow()
 
-    // Optimistic-UI: transient, user-facing message shown (e.g. via Snackbar) when an
-    // optimistic action (like, delete, publish) had to be rolled back because the
-    // server call failed. Screens should clear it after displaying it once.
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError = _actionError.asStateFlow()
 
@@ -257,19 +254,16 @@ class HomeViewModel : ViewModel() {
         _actionError.value = message
     }
 
-    /** Prepends a locally-built post (not yet confirmed by the server) to the feed. */
     fun insertOptimisticPost(post: Post) {
         _rawPosts.update { listOf(post) + it }
         _posts.update { listOf(post) + it }
     }
 
-    /** Removes a post (used to roll back an optimistic insert that failed, or a delete). */
     fun removePostById(postId: String) {
         _rawPosts.update { current -> current.filterNot { it.id == postId } }
         _posts.update { current -> current.filterNot { it.id == postId } }
     }
 
-    /** Mirrors a like/unlike state change made from another screen (e.g. Profile) into the feed. */
     fun applyLikeStateToPost(postId: String, isLiked: Boolean, likesCount: Int) {
         fun apply(list: List<Post>): List<Post> = list.map {
             if (it.id == postId) it.copy(isLiked = isLiked, likesCount = likesCount) else it
@@ -278,7 +272,6 @@ class HomeViewModel : ViewModel() {
         _posts.update(::apply)
     }
 
-    /** Re-inserts a post at its original position (used to roll back a failed delete). */
     fun restorePost(post: Post, atIndex: Int) {
         fun reinsert(list: List<Post>): List<Post> {
             if (list.any { it.id == post.id }) return list
@@ -334,7 +327,6 @@ class HomeViewModel : ViewModel() {
         val wasLiked = post.isLiked
         val previousCount = post.likesCount
 
-        // 1. Update the UI immediately, before the network call even starts.
         fun applyLocalState(list: List<Post>): List<Post> = list.map {
             if (it.id == post.id) {
                 if (wasLiked) it.copy(likesCount = (previousCount - 1).coerceAtLeast(0), isLiked = false)
@@ -344,7 +336,6 @@ class HomeViewModel : ViewModel() {
         _rawPosts.update(::applyLocalState)
         _posts.update(::applyLocalState)
 
-        // 2. Fire the request in the background and reconcile if it fails.
         viewModelScope.launch(Dispatchers.IO) {
             val result = if (wasLiked) postRepo.unlikePost(post.id) else postRepo.likePost(post.id)
             if (result.isFailure) {
@@ -364,10 +355,8 @@ class HomeViewModel : ViewModel() {
         if (index == -1) return
         val removedPost = currentList[index]
 
-        // 1. Remove immediately from the UI.
         removePostById(postId)
 
-        // 2. Confirm with the server; put the post back if it turns out it couldn't be deleted.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
             if (result.isFailure) {
@@ -402,12 +391,6 @@ class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         }
     }
 
-    /**
-     * Optimistic publish: the post shows up at the top of the home feed and the
-     * composer closes immediately, as if publishing already succeeded. The actual
-     * network call happens in the background; if it fails, the optimistic post is
-     * pulled back out of the feed and an error is surfaced there.
-     */
     fun createPost() {
         val text = _text.value
         if (text.isBlank() || isSubmitting) return
@@ -514,8 +497,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         val prefs = ServiceLocator.encryptedPreferencesManager
         val myId = prefs.getUserId() ?: "me_id"
         val myUsername = prefs.getUsername() ?: "you"
-
-        // 1. Show the comment immediately and clear the composer, as if it were already sent.
         val tempComment = Comment(
             id = "temp-${java.util.UUID.randomUUID()}",
             postId = currentPost.id,
@@ -532,7 +513,6 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         _commentText.value = ""
         _replyingTo.value = null
 
-        // 2. Confirm with the server; reconcile the temp comment with the real one, or roll back.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.createComment(currentPost.id, text, parentId)
             if (result.isSuccess) {
@@ -587,11 +567,9 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
             }
         }
 
-        // 1. Remove immediately (including any replies to the removed comment).
         _comments.value = previousComments.filter { it.id !in idsToRemove }
         _post.update { it?.copy(commentsCount = (it.commentsCount - idsToRemove.size).coerceAtLeast(0)) }
 
-        // 2. Confirm with the server; restore everything if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deleteComment(commentId)
             if (result.isFailure) {
@@ -709,7 +687,6 @@ class StoryViewModel : ViewModel() {
             fontFamily = _storyFontFamily.value
         )
 
-        // 1. Show it right away and close the composer, as if it were already posted.
         _stories.update { listOf(tempStory) + it }
         val text = _storyText.value
         val backgroundColor = _storyBackgroundColor.value
@@ -717,7 +694,6 @@ class StoryViewModel : ViewModel() {
         val fontFamily = _storyFontFamily.value
         _isFinished.value = true
 
-        // 2. Confirm with the server; reconcile on success, roll back on failure.
         viewModelScope.launch(Dispatchers.IO) {
             val result = storyRepo.createStory(
                 text = text,
@@ -747,10 +723,8 @@ class StoryViewModel : ViewModel() {
         if (index == -1) return
         val removedStory = currentList[index]
 
-        // 1. Remove immediately.
         _stories.update { it.filterNot { s -> s.id == storyId } }
 
-        // 2. Confirm with the server; put it back if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = storyRepo.deleteStory(storyId)
             if (result.isFailure) {
@@ -791,16 +765,8 @@ class DMChatViewModel : ViewModel() {
     private val msgRepo = ServiceLocator.messageRepository
     private val userRepo = ServiceLocator.userRepository
     private val prefs = ServiceLocator.encryptedPreferencesManager
-
-    // Messages confirmed by the server (via initial fetch + realtime updates).
     private val _serverMessages = MutableStateFlow<List<Message>>(emptyList())
-
-    // Optimistic-only messages: appended locally the instant "send" is tapped, before
-    // the network call resolves. Each carries isPending=true until confirmed, or
-    // isFailed=true if the send failed (so the bubble can offer a retry).
     private val _pendingMessages = MutableStateFlow<List<Message>>(emptyList())
-
-    // IDs currently being optimistically shown as deleted, ahead of server confirmation.
     private val _pendingDeleteIds = MutableStateFlow<Set<String>>(emptySet())
 
     val messages: StateFlow<List<Message>> = combine(
@@ -874,11 +840,8 @@ class DMChatViewModel : ViewModel() {
             isPending = true
         )
 
-        // 1. Show the bubble immediately, before the request even goes out.
         _pendingMessages.update { it + tempMessage }
 
-        // 2. Send in the background; drop the temp bubble once the real one arrives via
-        //    the server flow, or mark it failed (with a retry affordance) if it didn't go through.
         viewModelScope.launch(Dispatchers.IO) {
             val result = msgRepo.sendMessage(targetUserId, text)
             if (result.isSuccess) {
@@ -892,7 +855,6 @@ class DMChatViewModel : ViewModel() {
         }
     }
 
-    /** Retries a bubble that previously failed to send. */
     fun retryMessage(message: Message) {
         if (!message.isFailed) return
         _pendingMessages.update { list ->
@@ -912,7 +874,6 @@ class DMChatViewModel : ViewModel() {
         }
     }
 
-    /** Discards a bubble that failed to send, without retrying. */
     fun discardFailedMessage(messageId: String) {
         _pendingMessages.update { list -> list.filterNot { it.id == messageId } }
     }
@@ -924,10 +885,8 @@ class DMChatViewModel : ViewModel() {
     fun deleteMessage(messageId: String) {
         if (targetUserId.isEmpty()) return
 
-        // 1. Show it as deleted immediately.
         _pendingDeleteIds.update { it + messageId }
 
-        // 2. Confirm with the server; undo the optimistic delete if it failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = msgRepo.deleteMessageForEveryone(targetUserId, messageId)
             if (result.isFailure) {
@@ -1257,13 +1216,11 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
         val wasFollowing = _isFollowing.value
         val previousFollowersCount = profile.followersCount
 
-        // 1. Reflect the new follow state immediately.
         _isFollowing.value = !wasFollowing
         val delta = if (wasFollowing) -1 else 1
         _user.update { it?.copy(followersCount = (it.followersCount + delta).coerceAtLeast(0)) }
         _isFollowActionLoading.value = true
 
-        // 2. Confirm with the server; revert if the follow/unfollow request failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = if (wasFollowing) {
                 userRepo.unfollowUser(profile.id)
@@ -1335,11 +1292,9 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
         if (index == -1) return
         val removedPost = previousList[index]
 
-        // 1. Remove immediately from this profile's post list and the home feed.
         _posts.update { it.filterNot { p -> p.id == postId } }
         homeViewModel.removePostById(postId)
 
-        // 2. Confirm with the server; restore in both places if the delete failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = postRepo.deletePost(postId)
             if (result.isFailure) {
@@ -1435,7 +1390,6 @@ class FollowListViewModel : ViewModel() {
         val wasFollowing = entry.isFollowedByMe
         val newValue = !wasFollowing
 
-        // 1. Flip the follow state immediately in both lists.
         fun updateList(list: List<FollowListEntry>) = list.map {
             if (it.user.id == entry.user.id) it.copy(isFollowedByMe = newValue) else it
         }
@@ -1443,7 +1397,6 @@ class FollowListViewModel : ViewModel() {
         _following.value = updateList(_following.value)
         _followActionLoadingIds.update { it + entry.user.id }
 
-        // 2. Confirm with the server; revert if the request failed.
         viewModelScope.launch(Dispatchers.IO) {
             val result = if (wasFollowing) {
                 userRepo.unfollowUser(entry.user.id)

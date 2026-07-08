@@ -10,18 +10,11 @@ import androidx.core.app.NotificationCompat
 import com.textsocial.app.MainActivity
 import com.textsocial.app.R
 
-/**
- * Builds and shows the system tray notification for an incoming FCM push, and owns the
- * two notification channels the app uses. Shared by [com.textsocial.app.push.FcmService]
- * (real pushes) so the same code path is exercised regardless of where it's called from.
- */
 object NotificationHelper {
 
     const val CHANNEL_GENERAL = "general_activity"
     const val CHANNEL_MESSAGES = "messages"
 
-    // Keys used both when building the PendingIntent extras here and when MainActivity
-    // reads them back to decide where to navigate.
     const val EXTRA_NOTIF_TYPE = "notif_type"
     const val EXTRA_NOTIF_POST_ID = "notif_post_id"
     const val EXTRA_NOTIF_COMMENT_ID = "notif_comment_id"
@@ -53,11 +46,6 @@ object NotificationHelper {
         )
     }
 
-    /**
-     * Shows a system notification for a push payload. [data] is the FCM `data` map, using
-     * the keys the backend Edge Function agrees to send: type, title, body, post_id,
-     * comment_id, sender_id, sender_username.
-     */
     fun showFromPushData(context: Context, data: Map<String, String>) {
         val type = data["type"] ?: "general"
         val title = data["title"] ?: context.getString(R.string.app_name)
@@ -74,7 +62,7 @@ object NotificationHelper {
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
-            System.currentTimeMillis().toInt(), // unique-enough request code so notifications don't collide
+            System.currentTimeMillis().toInt(),
             tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -90,8 +78,6 @@ object NotificationHelper {
             .build()
 
         val manager = context.getSystemService(NotificationManager::class.java)
-        // Group DM notifications by sender, and other activity by type, so repeated pushes
-        // of the same kind update in place rather than piling up as separate entries.
         val notifId = (data["sender_id"] ?: type).hashCode()
         manager?.notify(notifId, notification)
     }

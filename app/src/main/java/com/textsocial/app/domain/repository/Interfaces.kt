@@ -69,9 +69,7 @@ interface UserRepository {
     suspend fun markNotificationsAsRead(): Result<Unit>
     suspend fun deleteNotification(notificationId: String): Result<Unit>
     suspend fun deleteNotifications(notificationIds: List<String>): Result<Unit>
-    /** Registers this device's FCM token so push notifications can reach it while the app is closed. */
     suspend fun registerDeviceToken(fcmToken: String): Result<Unit>
-    /** Called on logout so this device stops receiving pushes for the account that signed out. */
     suspend fun unregisterDeviceToken(fcmToken: String): Result<Unit>
     suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>>
 }

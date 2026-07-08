@@ -4,7 +4,6 @@
     package="com.textsocial.app">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Required on Android 13+ to actually show notifications to the user. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -38,10 +37,6 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
-
-        <!-- Default notification channel/icon/color used for any push Firebase shows
-             automatically (e.g. from a "notification" payload); our own pushes are
-             data-only and go through NotificationHelper instead, using their own channel. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />

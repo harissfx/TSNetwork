@@ -15,11 +15,6 @@ import androidx.navigation.navArgument
 import com.textsocial.app.presentation.screens.*
 import com.textsocial.app.presentation.viewmodel.*
 
-/**
- * @param pendingDeepLinkRoute A route to navigate to as soon as the user lands on [Routes.MAIN]
- * (e.g. built from a tapped push notification's extras). Consumed once via [onDeepLinkConsumed]
- * so it isn't re-triggered on configuration changes or back navigation.
- */
 @Composable
 fun AppNavGraph(
     navController: NavHostController = rememberNavController(),

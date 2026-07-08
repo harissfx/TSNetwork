@@ -1,23 +1,3 @@
-// supabase/functions/send-push/index.ts
-//
-// Supabase Edge Function that turns a new row in `notifications` or `messages`
-// into an actual push notification via Firebase Cloud Messaging (HTTP v1 API).
-//
-// Trigger: a Supabase Database Webhook configured on INSERT for both
-// `public.notifications` and `public.messages`, pointing at this function's URL.
-// Supabase sends the inserted row as `{ type: "INSERT", table, record, ... }`.
-//
-// Required secrets (set with `supabase secrets set ...`, see README):
-//   FIREBASE_SERVICE_ACCOUNT_JSON  - the full service account JSON, as one string
-//   SUPABASE_URL                   - auto-provided by Supabase
-//   SUPABASE_SERVICE_ROLE_KEY      - auto-provided by Supabase
-//
-// This function deliberately does NOT use the deprecated FCM "legacy" API
-// (server key + `Authorization: key=...`), since Google shut that down. It signs
-// its own short-lived OAuth2 access token from the service account (JWT Bearer
-// flow) using the Web Crypto API, which is all that's available in Deno's
-// Edge Function runtime.
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 interface WebhookPayload {
