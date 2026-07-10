@@ -6,6 +6,8 @@ import com.textsocial.app.data.local.EncryptedPreferencesManager
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.Authenticator
+import okhttp3.Cache
+import okhttp3.CacheControl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -30,10 +32,16 @@ object SupabaseClient {
             level = HttpLoggingInterceptor.Level.BODY
         }
 
+        val httpCache = Cache(
+            directory = java.io.File(context.cacheDir, "http_cache"),
+            maxSize = 10L * 1024 * 1024 // 10 MB
+        )
+
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
+            .cache(httpCache)
             .addInterceptor { chain ->
                 val originalRequest = chain.request()
                 val requestBuilder = originalRequest.newBuilder()
@@ -49,6 +57,18 @@ object SupabaseClient {
                 }
 
                 chain.proceed(requestBuilder.build())
+            }
+            .addNetworkInterceptor { chain ->
+                val request = chain.request()
+                val response = chain.proceed(request)
+                if (request.method == "GET") {
+                    response.newBuilder()
+                        .header("Cache-Control", "public, max-age=15")
+                        .removeHeader("Pragma")
+                        .build()
+                } else {
+                    response
+                }
             }
             .authenticator(object : Authenticator {
                 override fun authenticate(route: Route?, response: Response): Request? {

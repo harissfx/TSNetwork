@@ -4,7 +4,18 @@ import android.content.Context
 import com.textsocial.app.R
 import com.textsocial.app.data.api.SupabaseApiService
 import com.textsocial.app.data.api.SupabaseClient
+import com.textsocial.app.data.local.CacheConfig
 import com.textsocial.app.data.local.EncryptedPreferencesManager
+import com.textsocial.app.data.local.db.AppDatabase
+import com.textsocial.app.data.local.db.CacheMetaEntity
+import com.textsocial.app.data.local.db.ConversationCacheEntity
+import com.textsocial.app.data.local.db.LinkPreviewCacheEntity
+import com.textsocial.app.data.local.db.MessageCacheEntity
+import com.textsocial.app.data.local.db.NotificationCacheEntity
+import com.textsocial.app.data.local.db.PostCacheEntity
+import com.textsocial.app.data.local.db.ProfileCacheEntity
+import com.textsocial.app.data.local.db.StoryCacheEntity
+import com.textsocial.app.data.local.db.TrendingHashtagCacheEntity
 import com.textsocial.app.data.model.*
 import com.textsocial.app.domain.model.*
 import com.textsocial.app.domain.repository.*
@@ -22,9 +33,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 class SupabaseAuthException(val code: Int, val errorMsg: String) : Exception("Error $code: $errorMsg")
 
-private fun getSupabaseError(code: Int, errorBody: String?): SupabaseAuthException {
+private fun getSupabaseError(context: Context, code: Int, errorBody: String?): SupabaseAuthException {
     if (errorBody.isNullOrBlank()) {
-        return SupabaseAuthException(code, "API error")
+        return SupabaseAuthException(code, LocaleManager.applyLocale(context).getString(R.string.error_api_generic))
     }
     return try {
         val obj = JSONObject(errorBody)
@@ -37,7 +48,9 @@ private fun getSupabaseError(code: Int, errorBody: String?): SupabaseAuthExcepti
 
 class AuthRepositoryImpl(
     private val apiService: SupabaseApiService,
-    private val prefs: EncryptedPreferencesManager
+    private val prefs: EncryptedPreferencesManager,
+    private val context: Context,
+    private val db: AppDatabase? = null
 ) : AuthRepository {
 
     private val _currentUser = MutableStateFlow<User?>(null)
@@ -51,7 +64,7 @@ class AuthRepositoryImpl(
                 username = storedUsername,
                 email = "",
                 displayName = storedUsername.replaceFirstChar { it.uppercase() },
-                bio = "Welcome to my profile!",
+                bio = LocaleManager.applyLocale(context).getString(R.string.bio_default_welcome),
                 avatarColor = prefs.getUserAvatarColor(),
                 followersCount = 0,
                 followingCount = 0,
@@ -62,7 +75,7 @@ class AuthRepositoryImpl(
 
     override suspend fun login(usernameOrEmail: String, password: String): Result<User> {
         if (usernameOrEmail.isBlank() || password.isBlank()) {
-            return Result.failure(Exception("Username/email and password cannot be empty"))
+            return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_login_fields_empty)))
         }
 
         return try {
@@ -72,9 +85,9 @@ class AuthRepositoryImpl(
                 val profileResponse = apiService.getProfilesByUsername("eq.$usernameOrEmail")
                 if (profileResponse.isSuccessful) {
                     profileResponse.body()?.firstOrNull()?.email
-                        ?: return Result.failure(Exception("Username not found"))
+                        ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_username_not_found)))
                 } else {
-                    return Result.failure(Exception("Failed to resolve email from username"))
+                    return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_resolve_email_failed)))
                 }
             }
 
@@ -94,7 +107,7 @@ class AuthRepositoryImpl(
                         username = cleanUsername,
                         email = email,
                         display_name = cleanUsername.replaceFirstChar { it.uppercase() },
-                        bio = "Just joined the wave!"
+                        bio = LocaleManager.applyLocale(context).getString(R.string.bio_just_joined_wave)
                     )
                     apiService.createProfile(userProfile)
                 }
@@ -108,7 +121,7 @@ class AuthRepositoryImpl(
                     username = userProfile.username,
                     email = userProfile.email ?: "",
                     displayName = userProfile.display_name ?: userProfile.username.replaceFirstChar { it.uppercase() },
-                    bio = userProfile.bio ?: "No bio yet",
+                    bio = userProfile.bio ?: LocaleManager.applyLocale(context).getString(R.string.bio_no_bio_yet),
                     avatarColor = getAvatarColor(userProfile.username),
                     isPrivate = userProfile.is_private,
                     isVerified = userProfile.is_verified,
@@ -119,7 +132,7 @@ class AuthRepositoryImpl(
                 Result.success(user)
             } else {
                 val errorBody = response.errorBody()?.string()
-                Result.failure(getSupabaseError(response.code(), errorBody))
+                Result.failure(getSupabaseError(context, response.code(), errorBody))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -127,9 +140,9 @@ class AuthRepositoryImpl(
     }
 
     override suspend fun register(username: String, email: String, password: String): Result<User> {
-        if (username.length < 3) return Result.failure(Exception("Username must be at least 3 characters"))
+        if (username.length < 3) return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_username_min_length)))
         if (!username.matches(Regex("^[a-zA-Z0-9_]+$"))) {
-            return Result.failure(Exception("Username can only contain letters, numbers, and underscores"))
+            return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_username_invalid_chars)))
         }
 
         return try {
@@ -156,7 +169,7 @@ class AuthRepositoryImpl(
                         username = username.lowercase(),
                         email = email,
                         display_name = username.replaceFirstChar { it.uppercase() },
-                        bio = "Just joined the open-source wave! 👋",
+                        bio = LocaleManager.applyLocale(context).getString(R.string.bio_just_joined_oss_wave),
                         is_private = false
                     )
                     apiService.createProfile(profile)
@@ -179,11 +192,11 @@ class AuthRepositoryImpl(
                     Result.success(user)
                 } else {
                     val errorBody = loginResponse.errorBody()?.string()
-                    Result.failure(getSupabaseError(loginResponse.code(), errorBody))
+                    Result.failure(getSupabaseError(context, loginResponse.code(), errorBody))
                 }
             } else {
                 val errorBody = response.errorBody()?.string()
-                Result.failure(getSupabaseError(response.code(), errorBody))
+                Result.failure(getSupabaseError(context, response.code(), errorBody))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -193,7 +206,7 @@ class AuthRepositoryImpl(
     override suspend fun forgotPassword(email: String): Result<Unit> {
         return try {
             val response = apiService.recoverPassword(com.textsocial.app.data.model.RecoverPasswordRequest(email = email))
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to request password reset"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_password_reset_failed)))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -202,11 +215,15 @@ class AuthRepositoryImpl(
     override suspend fun logout(): Result<Unit> {
         prefs.clear()
         _currentUser.value = null
+        try {
+            db?.clearAllCache()
+        } catch (e: Exception) {
+        }
         return Result.success(Unit)
     }
 
     override suspend fun refreshToken(): Result<Unit> {
-        val refreshToken = prefs.getRefreshToken() ?: return Result.failure(Exception("No refresh token available"))
+        val refreshToken = prefs.getRefreshToken() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_no_refresh_token)))
         return try {
             val response = apiService.refreshToken(com.textsocial.app.data.model.RefreshTokenRequest(refresh_token = refreshToken))
             if (response.isSuccessful && response.body() != null) {
@@ -215,7 +232,7 @@ class AuthRepositoryImpl(
                 prefs.saveRefreshToken(authData.refresh_token)
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to refresh token: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_refresh_token_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -241,12 +258,75 @@ internal fun getAvatarColor(username: String?): String {
 
 class PostRepositoryImpl(
     private val apiService: SupabaseApiService,
-    private val prefs: EncryptedPreferencesManager
+    private val prefs: EncryptedPreferencesManager,
+    private val context: Context,
+    private val db: AppDatabase
 ) : PostRepository {
 
     private val localPosts = MutableStateFlow<List<Post>>(emptyList())
 
+    private fun PostCacheEntity.toDomain() = Post(
+        id = id,
+        userId = userId,
+        username = username,
+        displayName = displayName,
+        userAvatarColor = userAvatarColor,
+        text = text,
+        createdAt = createdAt,
+        likesCount = likesCount,
+        commentsCount = commentsCount,
+        isLiked = isLiked,
+        isVerified = isVerified,
+        userAvatarUrl = userAvatarUrl,
+        linkPreview = linkPreviewUrl?.let {
+            LinkPreview(
+                url = it,
+                title = linkPreviewTitle,
+                description = linkPreviewDescription,
+                imageUrl = linkPreviewImageUrl,
+                siteName = linkPreviewSiteName
+            )
+        }
+    )
+
+    private fun Post.toCacheEntity(fetchedAt: Long) = PostCacheEntity(
+        id = id,
+        userId = userId,
+        username = username,
+        displayName = displayName,
+        userAvatarColor = userAvatarColor,
+        text = text,
+        createdAt = createdAt,
+        likesCount = likesCount,
+        commentsCount = commentsCount,
+        isLiked = isLiked,
+        isVerified = isVerified,
+        userAvatarUrl = userAvatarUrl,
+        linkPreviewUrl = linkPreview?.url,
+        linkPreviewTitle = linkPreview?.title,
+        linkPreviewDescription = linkPreview?.description,
+        linkPreviewImageUrl = linkPreview?.imageUrl,
+        linkPreviewSiteName = linkPreview?.siteName,
+        fetchedAt = fetchedAt
+    )
+
+    private suspend fun invalidatePostsCache() {
+        db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_POSTS, 0L))
+    }
+
     override suspend fun getPosts(hashtag: String?): Result<List<Post>> {
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_POSTS) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.POSTS_TTL_MS)) {
+            val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
+            if (cachedPosts.isNotEmpty()) {
+                val filtered = if (hashtag != null) {
+                    cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) }
+                } else cachedPosts
+                localPosts.value = filtered
+                return Result.success(filtered)
+            }
+        }
+
         return try {
             val response = apiService.getPosts()
             if (response.isSuccessful && response.body() != null) {
@@ -279,6 +359,10 @@ class PostRepositoryImpl(
                     )
                 }
 
+                val now = System.currentTimeMillis()
+                db.postCacheDao().replaceAll(posts.map { it.toCacheEntity(now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_POSTS, now))
+
                 val filtered = if (hashtag != null) {
                     posts.filter { it.text.contains(hashtag, ignoreCase = true) }
                 } else posts
@@ -286,16 +370,26 @@ class PostRepositoryImpl(
                 localPosts.value = filtered
                 Result.success(filtered)
             } else {
-                Result.failure(Exception("Failed to retrieve posts from server: ${response.code()}"))
+                val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
+                if (cachedPosts.isNotEmpty()) {
+                    Result.success(if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts)
+                } else {
+                    Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_posts_failed, response.code().toString())))
+                }
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
+            if (cachedPosts.isNotEmpty()) {
+                Result.success(if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts)
+            } else {
+                Result.failure(e)
+            }
         }
     }
 
     override suspend fun createPost(text: String): Result<Unit> {
         if (text.length > 3000) {
-            return Result.failure(Exception("Post exceeds max 3000 characters"))
+            return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_post_too_long)))
         }
 
         return try {
@@ -306,7 +400,7 @@ class PostRepositoryImpl(
             )
             val response = apiService.createPost(body)
             if (!response.isSuccessful) {
-                return Result.failure(Exception("Failed to publish post: ${response.code()}"))
+                return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_publish_post_failed, response.code().toString())))
             }
 
             val createdPostId = response.body()?.firstOrNull()?.id
@@ -334,6 +428,7 @@ class PostRepositoryImpl(
                 }
             }
 
+            invalidatePostsCache()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -343,7 +438,10 @@ class PostRepositoryImpl(
     override suspend fun deletePost(postId: String): Result<Unit> {
         return try {
             val response = apiService.deletePost("eq.$postId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete post: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidatePostsCache()
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_post_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -356,7 +454,10 @@ class PostRepositoryImpl(
                 user_id = (prefs.getUserId() ?: "")
             )
             val response = apiService.likePost(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to like post: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidatePostsCache()
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_like_post_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -366,7 +467,10 @@ class PostRepositoryImpl(
         return try {
             val myId = prefs.getUserId() ?: ""
             val response = apiService.unlikePost(postIdFilter = "eq.$postId", userIdFilter = "eq.$myId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unlike post: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidatePostsCache()
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_unlike_post_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -408,7 +512,7 @@ class PostRepositoryImpl(
                 }
                 Result.success(comments)
             } else {
-                Result.failure(Exception("Failed to retrieve comments: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_comments_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -426,7 +530,7 @@ class PostRepositoryImpl(
             )
             val response = apiService.createComment(body)
             if (!response.isSuccessful) {
-                return Result.failure(Exception("Failed to create comment: ${response.code()}"))
+                return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_create_comment_failed, response.code().toString())))
             }
 
             val createdCommentId = response.body()?.firstOrNull()?.id
@@ -464,7 +568,7 @@ class PostRepositoryImpl(
     override suspend fun deleteComment(commentId: String): Result<Unit> {
         return try {
             val response = apiService.deleteComment("eq.$commentId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete comment: ${response.code()}"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_comment_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -477,7 +581,7 @@ class PostRepositoryImpl(
                 user_id = (prefs.getUserId() ?: "")
             )
             val response = apiService.likeComment(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to like comment: ${response.code()}"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_like_comment_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -487,38 +591,78 @@ class PostRepositoryImpl(
         return try {
             val myId = prefs.getUserId() ?: ""
             val response = apiService.unlikeComment(commentIdFilter = "eq.$commentId", userIdFilter = "eq.$myId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unlike comment: ${response.code()}"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_unlike_comment_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     override suspend fun getLinkPreview(url: String): Result<LinkPreview?> {
+        val cached = db.linkPreviewCacheDao().get(url)
+        if (cached != null && CacheConfig.isFresh(cached.fetchedAt, CacheConfig.LINK_PREVIEW_TTL_MS)) {
+            return Result.success(cached.toDomain())
+        }
+
         return try {
             val response = apiService.fetchLinkPreview(com.textsocial.app.data.model.LinkPreviewRequest(url))
             if (!response.isSuccessful) {
-                return Result.failure(Exception("Failed to fetch link preview: ${response.code()}"))
+                return if (cached != null) Result.success(cached.toDomain())
+                else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_link_preview_failed, response.code().toString())))
             }
             val dto = response.body()
-            Result.success(dto?.takeIf { !it.fetch_failed }?.toDomain())
+            val preview = dto?.takeIf { !it.fetch_failed }?.toDomain()
+            if (preview != null) {
+                db.linkPreviewCacheDao().upsertAll(listOf(preview.toCacheEntity(System.currentTimeMillis())))
+            }
+            Result.success(preview)
         } catch (e: Exception) {
-            Result.failure(e)
+            if (cached != null) Result.success(cached.toDomain()) else Result.failure(e)
         }
     }
 
+    private fun LinkPreviewCacheEntity.toDomain() = LinkPreview(
+        url = url,
+        title = title,
+        description = description,
+        imageUrl = imageUrl,
+        siteName = siteName
+    )
+
+    private fun LinkPreview.toCacheEntity(fetchedAt: Long) = LinkPreviewCacheEntity(
+        url = url,
+        title = title,
+        description = description,
+        imageUrl = imageUrl,
+        siteName = siteName,
+        fetchedAt = fetchedAt
+    )
+
     private suspend fun fetchCachedLinkPreviews(urls: List<String>): Map<String, LinkPreview> {
         if (urls.isEmpty()) return emptyMap()
-        return try {
-            val filter = "in.(${urls.joinToString(",") { "\"$it\"" }})"
+        val now = System.currentTimeMillis()
+        val localHits = db.linkPreviewCacheDao().getMultiple(urls)
+            .filter { CacheConfig.isFresh(it.fetchedAt, CacheConfig.LINK_PREVIEW_TTL_MS) }
+            .associate { it.url to it.toDomain() }
+
+        val remainingUrls = urls.filterNot { localHits.containsKey(it) }
+        if (remainingUrls.isEmpty()) return localHits
+        val remoteHits = try {
+            val filter = "in.(${remainingUrls.joinToString(",") { "\"$it\"" }})"
             val response = apiService.getLinkPreviewsCached(urlInFilter = filter)
-            if (!response.isSuccessful) return emptyMap()
-            response.body()
+            if (!response.isSuccessful) emptyMap()
+            else response.body()
                 ?.filterNot { it.fetch_failed }
                 ?.associate { it.url to it.toDomain() }
                 ?: emptyMap()
         } catch (e: Exception) {
             emptyMap()
         }
+
+        if (remoteHits.isNotEmpty()) {
+            db.linkPreviewCacheDao().upsertAll(remoteHits.values.map { it.toCacheEntity(now) })
+        }
+
+        return localHits + remoteHits
     }
 
     private fun com.textsocial.app.data.model.LinkPreviewDto.toDomain() = LinkPreview(
@@ -532,10 +676,65 @@ class PostRepositoryImpl(
 
 class StoryRepositoryImpl(
     private val apiService: SupabaseApiService,
-    private val prefs: EncryptedPreferencesManager
+    private val prefs: EncryptedPreferencesManager,
+    private val context: Context,
+    private val db: AppDatabase
 ) : StoryRepository {
 
+    private fun StoryCacheEntity.toDomain() = Story(
+        id = id,
+        userId = userId,
+        username = username,
+        text = text,
+        createdAt = createdAt,
+        expiresAt = expiresAt,
+        avatarColor = avatarColor,
+        views = if (viewsCsv.isBlank()) emptyList() else viewsCsv.split(","),
+        viewers = if (viewersEncoded.isBlank()) emptyList() else viewersEncoded.split(";;").mapNotNull { entry ->
+            val parts = entry.split("::")
+            if (parts.size < 4) null else StoryViewer(
+                username = parts[0],
+                avatarUrl = parts[1].ifEmpty { null },
+                avatarColor = parts[2],
+                isVerified = parts[3].toBoolean()
+            )
+        },
+        backgroundColor = backgroundColor,
+        textColor = textColor,
+        fontFamily = fontFamily,
+        isVerified = isVerified,
+        avatarUrl = avatarUrl
+    )
+
+    private fun Story.toCacheEntity(fetchedAt: Long) = StoryCacheEntity(
+        id = id,
+        userId = userId,
+        username = username,
+        text = text,
+        createdAt = createdAt,
+        expiresAt = expiresAt,
+        avatarColor = avatarColor,
+        viewsCsv = views.joinToString(","),
+        viewersEncoded = viewers.joinToString(";;") { "${it.username}::${it.avatarUrl ?: ""}::${it.avatarColor}::${it.isVerified}" },
+        backgroundColor = backgroundColor,
+        textColor = textColor,
+        fontFamily = fontFamily,
+        isVerified = isVerified,
+        avatarUrl = avatarUrl,
+        fetchedAt = fetchedAt
+    )
+
+    private suspend fun invalidateStoriesCache() {
+        db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_STORIES, 0L))
+    }
+
     override suspend fun getStories(): Result<List<Story>> {
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_STORIES) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.STORIES_TTL_MS)) {
+            val cachedStories = db.storyCacheDao().getAll().map { it.toDomain() }
+            if (cachedStories.isNotEmpty()) return Result.success(cachedStories)
+        }
+
         return try {
             val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
             val nowString = sdf.format(Date())
@@ -552,7 +751,6 @@ class StoryRepositoryImpl(
 
                 val allViewerUsernames = viewerUsernamesByStoryId.values.flatten().distinct()
                 val viewerProfilesByUsername = fetchProfilesByUsernames(allViewerUsernames)
-
                 val stories = dtos.map { dto ->
                     val viewerUsernames = viewerUsernamesByStoryId[dto.id] ?: emptyList()
                     val senderUsername = dto.users?.username ?: "user"
@@ -583,12 +781,18 @@ class StoryRepositoryImpl(
                         avatarUrl = dto.users?.avatar_url
                     )
                 }
+                val now = System.currentTimeMillis()
+                db.storyCacheDao().replaceAll(stories.map { it.toCacheEntity(now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_STORIES, now))
                 Result.success(stories)
             } else {
-                Result.failure(Exception("Failed to fetch stories: ${response.code()}"))
+                val cachedStories = db.storyCacheDao().getAll().map { it.toDomain() }
+                if (cachedStories.isNotEmpty()) Result.success(cachedStories)
+                else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_stories_failed, response.code().toString())))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val cachedStories = db.storyCacheDao().getAll().map { it.toDomain() }
+            if (cachedStories.isNotEmpty()) Result.success(cachedStories) else Result.failure(e)
         }
     }
 
@@ -611,7 +815,7 @@ class StoryRepositoryImpl(
         textColor: String,
         fontFamily: String
     ): Result<Unit> {
-        if (text.length > 280) return Result.failure(Exception("Story exceeds 280 characters limit"))
+        if (text.length > 280) return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_story_too_long)))
         return try {
             val calendar = Calendar.getInstance()
             calendar.add(Calendar.HOUR, 24)
@@ -627,7 +831,10 @@ class StoryRepositoryImpl(
                 font_family = fontFamily
             )
             val response = apiService.createStory(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to share story: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidateStoriesCache()
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_share_story_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -639,7 +846,7 @@ class StoryRepositoryImpl(
             if (response.isSuccessful && response.body() != null) {
                 Result.success(response.body()!!.map { it.viewer_username })
             } else {
-                Result.failure(Exception("Failed to get story views: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_get_story_views_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -653,7 +860,7 @@ class StoryRepositoryImpl(
                 viewer_username = (prefs.getUsername() ?: "user")
             )
             val response = apiService.recordStoryView(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to record view: ${response.code()}"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_record_view_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -662,7 +869,10 @@ class StoryRepositoryImpl(
     override suspend fun deleteStory(storyId: String): Result<Unit> {
         return try {
             val response = apiService.deleteStory("eq.$storyId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete story: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidateStoriesCache()
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_story_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -671,8 +881,56 @@ class StoryRepositoryImpl(
 
 class MessageRepositoryImpl(
     private val apiService: SupabaseApiService,
-    private val prefs: EncryptedPreferencesManager
+    private val prefs: EncryptedPreferencesManager,
+    private val context: Context,
+    private val db: AppDatabase
 ) : MessageRepository {
+
+    private fun ConversationCacheEntity.toDomain() = Conversation(
+        id = id,
+        otherUserId = otherUserId,
+        otherUsername = otherUsername,
+        otherAvatarColor = otherAvatarColor,
+        lastMessage = lastMessage,
+        lastMessageTime = lastMessageTime,
+        unreadCount = unreadCount,
+        otherIsVerified = otherIsVerified,
+        otherAvatarUrl = otherAvatarUrl
+    )
+
+    private fun Conversation.toCacheEntity(fetchedAt: Long) = ConversationCacheEntity(
+        id = id,
+        otherUserId = otherUserId,
+        otherUsername = otherUsername,
+        otherAvatarColor = otherAvatarColor,
+        lastMessage = lastMessage,
+        lastMessageTime = lastMessageTime,
+        unreadCount = unreadCount,
+        otherIsVerified = otherIsVerified,
+        otherAvatarUrl = otherAvatarUrl,
+        fetchedAt = fetchedAt
+    )
+
+    private fun MessageCacheEntity.toDomain() = Message(
+        id = id,
+        conversationId = conversationId,
+        senderId = senderId,
+        text = text,
+        createdAt = createdAt,
+        isRead = isRead,
+        isDeleted = isDeleted
+    )
+
+    private fun Message.toCacheEntity(fetchedAt: Long) = MessageCacheEntity(
+        id = id,
+        conversationId = conversationId,
+        senderId = senderId,
+        text = text,
+        createdAt = createdAt,
+        isRead = isRead,
+        isDeleted = isDeleted,
+        fetchedAt = fetchedAt
+    )
 
     private val wsClient = OkHttpClient()
     private val webSockets = ConcurrentHashMap<String, WebSocket>()
@@ -791,7 +1049,14 @@ class MessageRepositoryImpl(
     }
 
     override suspend fun getConversations(): Result<List<Conversation>> {
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
+
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_CONVERSATIONS) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.CONVERSATIONS_TTL_MS)) {
+            val cached = db.conversationCacheDao().getAll().map { it.toDomain() }
+            if (cached.isNotEmpty()) return Result.success(cached)
+        }
+
         return try {
             val response = apiService.getConversations("(user1_id.eq.$myId,user2_id.eq.$myId)")
             if (response.isSuccessful && response.body() != null) {
@@ -821,17 +1086,38 @@ class MessageRepositoryImpl(
                         otherAvatarUrl = otherProfile?.avatar_url
                     )
                 }
-                Result.success(list.sortedByDescending { it.lastMessageTime })
+                val sorted = list.sortedByDescending { it.lastMessageTime }
+                val now = System.currentTimeMillis()
+                db.conversationCacheDao().replaceAll(sorted.map { it.toCacheEntity(now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_CONVERSATIONS, now))
+                Result.success(sorted)
             } else {
-                Result.failure(Exception("Failed to load conversations: ${response.code()}"))
+                val cached = db.conversationCacheDao().getAll().map { it.toDomain() }
+                if (cached.isNotEmpty()) Result.success(cached)
+                else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_load_conversations_failed, response.code().toString())))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val cached = db.conversationCacheDao().getAll().map { it.toDomain() }
+            if (cached.isNotEmpty()) Result.success(cached) else Result.failure(e)
         }
     }
 
     override suspend fun getMessages(otherUserId: String): Result<List<Message>> {
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
+        val conversationIdForCache = getConversationId(myId, otherUserId)
+        val metaKey = CacheConfig.messagesMetaKey(conversationIdForCache)
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(metaKey) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.MESSAGES_TTL_MS)) {
+            val cachedMessages = db.messageCacheDao().getForConversation(conversationIdForCache).map { it.toDomain() }
+            if (cachedMessages.isNotEmpty()) {
+                conversationMessages[conversationIdForCache] = cachedMessages
+                val flow = _messageFlows.getOrPut(conversationIdForCache) { MutableStateFlow(emptyList()) }
+                flow.value = cachedMessages
+                connectWebSocket(conversationIdForCache)
+                return Result.success(cachedMessages)
+            }
+        }
+
         return try {
             val conversationId = getConversationId(myId, otherUserId)
             val response = apiService.getMessages("eq.$conversationId")
@@ -851,11 +1137,24 @@ class MessageRepositoryImpl(
                 val flow = _messageFlows.getOrPut(conversationId) { MutableStateFlow(emptyList()) }
                 flow.value = messages
 
+                val now = System.currentTimeMillis()
+                db.messageCacheDao().replaceForConversation(conversationId, messages.map { it.toCacheEntity(now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.messagesMetaKey(conversationId), now))
+
                 connectWebSocket(conversationId)
 
                 Result.success(messages)
             } else {
-                Result.failure(Exception("Failed to get messages: ${response.code()}"))
+                val cachedMessages = db.messageCacheDao().getForConversation(conversationId).map { it.toDomain() }
+                if (cachedMessages.isNotEmpty()) {
+                    conversationMessages[conversationId] = cachedMessages
+                    val flow = _messageFlows.getOrPut(conversationId) { MutableStateFlow(emptyList()) }
+                    flow.value = cachedMessages
+                    connectWebSocket(conversationId)
+                    Result.success(cachedMessages)
+                } else {
+                    Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_get_messages_failed, response.code().toString())))
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -889,7 +1188,7 @@ class MessageRepositoryImpl(
     }
 
     override suspend fun sendMessage(otherUserId: String, text: String): Result<Unit> {
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
         return try {
             val conversationId = getConversationId(myId, otherUserId)
             ensureConversationExists(conversationId, myId, otherUserId)
@@ -918,11 +1217,14 @@ class MessageRepositoryImpl(
                         val updated = currentList + newMessage
                         conversationMessages[conversationId] = updated
                         flow.value = updated
+                        db.messageCacheDao().insertAll(listOf(newMessage.toCacheEntity(System.currentTimeMillis())))
                     }
+                    // Daftar percakapan berubah (last message baru) -> paksa refresh berikutnya.
+                    db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_CONVERSATIONS, 0L))
                 }
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to send message via API: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_send_message_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -930,21 +1232,24 @@ class MessageRepositoryImpl(
     }
 
     override suspend fun markMessagesAsRead(otherUserId: String): Result<Unit> {
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
         return try {
             val conversationId = getConversationId(myId, otherUserId)
             val response = apiService.markMessagesAsRead(
                 conversationFilter = "eq.$conversationId",
                 senderFilter = "neq.$myId"
             )
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to mark as read: ${response.code()}"))
+            if (response.isSuccessful) {
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_CONVERSATIONS, 0L))
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_mark_read_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     override suspend fun deleteMessageForEveryone(otherUserId: String, messageId: String): Result<Unit> {
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
         return try {
             val conversationId = getConversationId(myId, otherUserId)
             val response = apiService.deleteMessageForEveryone(idFilter = "eq.$messageId")
@@ -952,13 +1257,13 @@ class MessageRepositoryImpl(
                 val flow = _messageFlows.getOrPut(conversationId) { MutableStateFlow(emptyList()) }
                 val currentList = conversationMessages[conversationId] ?: emptyList()
                 val updated = currentList.map {
-                    if (it.id == messageId) it.copy(text = "Pesan ini telah dihapus", isDeleted = true) else it
+                    if (it.id == messageId) it.copy(text = LocaleManager.applyLocale(context).getString(R.string.pesan_dihapus), isDeleted = true) else it
                 }
                 conversationMessages[conversationId] = updated
                 flow.value = updated
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to delete message: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_message_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -971,7 +1276,7 @@ class MessageRepositoryImpl(
 
     override suspend fun hideConversations(otherUserIds: List<String>): Result<Unit> {
         if (otherUserIds.isEmpty()) return Result.success(Unit)
-        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
         return try {
             val idsWhereImUser1 = otherUserIds.filter { myId < it }.map { getConversationId(myId, it) }
             val idsWhereImUser2 = otherUserIds.filter { myId >= it }.map { getConversationId(myId, it) }
@@ -980,16 +1285,17 @@ class MessageRepositoryImpl(
                 val filter = "in.(${idsWhereImUser1.joinToString(",")})"
                 val response = apiService.hideConversationsForUser1(filter)
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Failed to hide conversation: ${response.code()}"))
+                    return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_hide_conversation_failed, response.code().toString())))
                 }
             }
             if (idsWhereImUser2.isNotEmpty()) {
                 val filter = "in.(${idsWhereImUser2.joinToString(",")})"
                 val response = apiService.hideConversationsForUser2(filter)
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Failed to hide conversation: ${response.code()}"))
+                    return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_hide_conversation_failed, response.code().toString())))
                 }
             }
+            db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_CONVERSATIONS, 0L))
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -1007,25 +1313,77 @@ class MessageRepositoryImpl(
 class UserRepositoryImpl(
     private val apiService: SupabaseApiService,
     private val prefs: EncryptedPreferencesManager,
-    private val context: Context
+    private val context: Context,
+    private val db: AppDatabase
 ) : UserRepository {
+
+    private fun ProfileCacheEntity.toDomain() = User(
+        id = userId,
+        username = username,
+        email = email,
+        displayName = displayName,
+        bio = bio,
+        avatarColor = getAvatarColor(username),
+        isPrivate = isPrivate,
+        followersCount = followersCount,
+        followingCount = followingCount,
+        postsCount = postsCount,
+        isVerified = isVerified,
+        avatarUrl = avatarUrl,
+        hideFollowingList = hideFollowingList
+    )
+
+    private suspend fun cacheProfile(p: ProfileDto) {
+        val existing = db.profileCacheDao().getByUserId(p.id)
+        db.profileCacheDao().upsert(
+            ProfileCacheEntity(
+                userId = p.id,
+                username = p.username,
+                email = p.email ?: "",
+                displayName = p.display_name ?: p.username.replaceFirstChar { it.uppercase() },
+                bio = p.bio ?: LocaleManager.applyLocale(context).getString(R.string.bio_welcome_oss),
+                isPrivate = p.is_private,
+                followersCount = existing?.followersCount ?: 0,
+                followingCount = existing?.followingCount ?: 0,
+                postsCount = existing?.postsCount ?: 0,
+                isVerified = p.is_verified,
+                avatarUrl = p.avatar_url,
+                hideFollowingList = p.hide_following_list,
+                fetchedAt = System.currentTimeMillis(),
+                followCountsFetchedAt = existing?.followCountsFetchedAt ?: 0L
+            )
+        )
+    }
+
+    /** Paksa profil (dan follow counts-nya) di-refresh ulang di panggilan berikutnya. */
+    private suspend fun invalidateProfileCache(userId: String) {
+        val existing = db.profileCacheDao().getByUserId(userId) ?: return
+        db.profileCacheDao().upsert(existing.copy(fetchedAt = 0L, followCountsFetchedAt = 0L))
+    }
 
     override suspend fun getProfile(userId: String): Result<User> {
         return try {
             val resolvedUserId = if (userId == "me_id") {
-                prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+                prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             } else {
                 userId
             }
+
+            val cached = db.profileCacheDao().getByUserId(resolvedUserId)
+            if (cached != null && CacheConfig.isFresh(cached.fetchedAt, CacheConfig.PROFILE_TTL_MS)) {
+                return Result.success(cached.toDomain())
+            }
+
             val response = apiService.getProfile("eq.$resolvedUserId")
             if (response.isSuccessful && response.body()?.isNotEmpty() == true) {
                 val p = response.body()!!.first()
+                cacheProfile(p)
                 val user = User(
                     id = p.id,
                     username = p.username,
                     email = p.email ?: "",
                     displayName = p.display_name ?: p.username.replaceFirstChar { it.uppercase() },
-                    bio = p.bio ?: "Welcome to my open-source profile!",
+                    bio = p.bio ?: LocaleManager.applyLocale(context).getString(R.string.bio_welcome_oss),
                     avatarColor = getAvatarColor(p.username),
                     isPrivate = p.is_private,
                     isVerified = p.is_verified,
@@ -1033,8 +1391,10 @@ class UserRepositoryImpl(
                     hideFollowingList = p.hide_following_list
                 )
                 Result.success(user)
+            } else if (cached != null) {
+                Result.success(cached.toDomain())
             } else {
-                Result.failure(Exception("Profile not found: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_profile_not_found, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1043,15 +1403,21 @@ class UserRepositoryImpl(
 
     override suspend fun getProfileByUsername(username: String): Result<User> {
         return try {
+            val cached = db.profileCacheDao().getByUsername(username.lowercase())
+            if (cached != null && CacheConfig.isFresh(cached.fetchedAt, CacheConfig.PROFILE_TTL_MS)) {
+                return Result.success(cached.toDomain())
+            }
+
             val response = apiService.getProfilesByUsername("eq.${username.lowercase()}")
             if (response.isSuccessful && response.body()?.isNotEmpty() == true) {
                 val p = response.body()!!.first()
+                cacheProfile(p)
                 val user = User(
                     id = p.id,
                     username = p.username,
                     email = p.email ?: "",
                     displayName = p.display_name ?: p.username.replaceFirstChar { it.uppercase() },
-                    bio = p.bio ?: "Welcome to my open-source profile!",
+                    bio = p.bio ?: LocaleManager.applyLocale(context).getString(R.string.bio_welcome_oss),
                     avatarColor = getAvatarColor(p.username),
                     isPrivate = p.is_private,
                     isVerified = p.is_verified,
@@ -1059,8 +1425,10 @@ class UserRepositoryImpl(
                     hideFollowingList = p.hide_following_list
                 )
                 Result.success(user)
+            } else if (cached != null) {
+                Result.success(cached.toDomain())
             } else {
-                Result.failure(Exception("Username profile not found: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_username_profile_not_found, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1076,7 +1444,10 @@ class UserRepositoryImpl(
                 is_private = isPrivate
             )
             val response = apiService.updateProfile("eq.$myId", body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to update profile: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidateProfileCache(myId)
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_update_profile_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1084,7 +1455,7 @@ class UserRepositoryImpl(
 
     override suspend fun uploadAvatar(imageBytes: ByteArray): Result<String> {
         return try {
-            val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             val mediaType = "image/jpeg".toMediaTypeOrNull()
             val requestBody = imageBytes.toRequestBody(mediaType)
             val objectPath = "$myId/profile.jpg"
@@ -1106,6 +1477,7 @@ class UserRepositoryImpl(
                 return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_save_profile_photo_failed, saveResponse.code().toString())))
             }
 
+            invalidateProfileCache(myId)
             Result.success(publicUrl)
         } catch (e: Exception) {
             Result.failure(e)
@@ -1120,7 +1492,11 @@ class UserRepositoryImpl(
                 following_id = targetUserId
             )
             val response = apiService.followUser(body)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to follow user: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidateProfileCache(targetUserId)
+                invalidateProfileCache(myId)
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_follow_user_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1130,7 +1506,11 @@ class UserRepositoryImpl(
         return try {
             val myId = prefs.getUserId() ?: ""
             val response = apiService.unfollowUser(followerFilter = "eq.$myId", followingFilter = "eq.$targetUserId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to unfollow user: ${response.code()}"))
+            if (response.isSuccessful) {
+                invalidateProfileCache(targetUserId)
+                invalidateProfileCache(myId)
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_unfollow_user_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1144,7 +1524,7 @@ class UserRepositoryImpl(
                 val followingNow = response.body()?.any { it.follower_id == myId } ?: false
                 Result.success(followingNow)
             } else {
-                Result.failure(Exception("Failed to check follow status: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_check_follow_status_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1152,14 +1532,20 @@ class UserRepositoryImpl(
     }
 
     override suspend fun getFollowCounts(userId: String): Result<Pair<Int, Int>> {
+        val cached = db.profileCacheDao().getByUserId(userId)
+        if (cached != null && CacheConfig.isFresh(cached.followCountsFetchedAt, CacheConfig.FOLLOW_COUNTS_TTL_MS)) {
+            return Result.success(cached.followersCount to cached.followingCount)
+        }
+
         return try {
             val followersResponse = apiService.getFollowers("eq.$userId")
             val followingResponse = apiService.getFollowing("eq.$userId")
             val followersCount = followersResponse.body()?.size ?: 0
             val followingCount = followingResponse.body()?.size ?: 0
+            db.profileCacheDao().updateFollowCounts(userId, followersCount, followingCount, System.currentTimeMillis())
             Result.success(followersCount to followingCount)
         } catch (e: Exception) {
-            Result.failure(e)
+            if (cached != null) Result.success(cached.followersCount to cached.followingCount) else Result.failure(e)
         }
     }
     private suspend fun mapUserIdsToProfiles(ids: List<String>): List<User> {
@@ -1191,7 +1577,7 @@ class UserRepositoryImpl(
             val myId = prefs.getUserId() ?: return Result.success(emptyList())
             val followingResponse = apiService.getFollowing("eq.$myId")
             if (!followingResponse.isSuccessful) {
-                return Result.failure(Exception("Failed to load following: ${followingResponse.code()}"))
+                return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_load_following_failed, followingResponse.code().toString())))
             }
             val followingIds = followingResponse.body()?.map { it.following_id } ?: emptyList()
             Result.success(mapUserIdsToProfiles(followingIds))
@@ -1204,7 +1590,7 @@ class UserRepositoryImpl(
         return try {
             val response = apiService.getFollowers("eq.$userId")
             if (!response.isSuccessful) {
-                return Result.failure(Exception("Failed to load followers: ${response.code()}"))
+                return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_load_followers_failed, response.code().toString())))
             }
             val ids = response.body()?.map { it.follower_id } ?: emptyList()
             Result.success(mapUserIdsToProfiles(ids))
@@ -1217,7 +1603,7 @@ class UserRepositoryImpl(
         return try {
             val response = apiService.getFollowing("eq.$userId")
             if (!response.isSuccessful) {
-                return Result.failure(Exception("Failed to load following: ${response.code()}"))
+                return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_load_following_failed, response.code().toString())))
             }
             val ids = response.body()?.map { it.following_id } ?: emptyList()
             Result.success(mapUserIdsToProfiles(ids))
@@ -1234,7 +1620,7 @@ class UserRepositoryImpl(
                 val followedBy = response.body()?.any { it.follower_id == targetUserId } ?: false
                 Result.success(followedBy)
             } else {
-                Result.failure(Exception("Failed to check follow-back status: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_check_followback_status_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1243,12 +1629,12 @@ class UserRepositoryImpl(
 
     override suspend fun updateFollowListPrivacy(hideFollowingList: Boolean): Result<Unit> {
         return try {
-            val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             val response = apiService.updateFollowListPrivacy(
                 "eq.$myId",
                 UpdateFollowListPrivacyRequest(hide_following_list = hideFollowingList)
             )
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to update privacy: ${response.code()}"))
+            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_update_privacy_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1265,7 +1651,7 @@ class UserRepositoryImpl(
         }
 
         return try {
-            val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             val checkResponse = apiService.getProfilesByUsername("eq.$cleanUsername")
             val takenByOther = checkResponse.body()?.any { it.id != myId } ?: false
             if (takenByOther) {
@@ -1307,14 +1693,51 @@ class UserRepositoryImpl(
                 }
                 Result.success(users)
             } else {
-                Result.failure(Exception("Failed to search profiles: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_search_profiles_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
+    private fun NotificationCacheEntity.toDomain() = Notification(
+        id = id,
+        type = type,
+        senderId = senderId,
+        senderUsername = senderUsername,
+        senderAvatarColor = senderAvatarColor,
+        postId = postId,
+        commentId = commentId,
+        text = text,
+        createdAt = createdAt,
+        isRead = isRead,
+        senderIsVerified = senderIsVerified,
+        senderAvatarUrl = senderAvatarUrl
+    )
+
+    private fun Notification.toCacheEntity(fetchedAt: Long) = NotificationCacheEntity(
+        id = id,
+        type = type,
+        senderId = senderId,
+        senderUsername = senderUsername,
+        senderAvatarColor = senderAvatarColor,
+        postId = postId,
+        commentId = commentId,
+        text = text,
+        createdAt = createdAt,
+        isRead = isRead,
+        senderIsVerified = senderIsVerified,
+        senderAvatarUrl = senderAvatarUrl,
+        fetchedAt = fetchedAt
+    )
+
     override suspend fun getNotifications(): Result<List<Notification>> {
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_NOTIFICATIONS) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.NOTIFICATIONS_TTL_MS)) {
+            val cached = db.notificationCacheDao().getAll().map { it.toDomain() }
+            if (cached.isNotEmpty()) return Result.success(cached)
+        }
+
         return try {
             val myId = prefs.getUserId() ?: ""
             val response = apiService.getNotifications("eq.$myId")
@@ -1338,12 +1761,18 @@ class UserRepositoryImpl(
                         senderAvatarUrl = dto.sender?.avatar_url
                     )
                 }
+                val now = System.currentTimeMillis()
+                db.notificationCacheDao().replaceAll(notifications.map { it.toCacheEntity(now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_NOTIFICATIONS, now))
                 Result.success(notifications)
             } else {
-                Result.failure(Exception("Failed to fetch notifications: ${response.code()}"))
+                val cached = db.notificationCacheDao().getAll().map { it.toDomain() }
+                if (cached.isNotEmpty()) Result.success(cached)
+                else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_notifications_failed, response.code().toString())))
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            val cached = db.notificationCacheDao().getAll().map { it.toDomain() }
+            if (cached.isNotEmpty()) Result.success(cached) else Result.failure(e)
         }
     }
 
@@ -1351,9 +1780,10 @@ class UserRepositoryImpl(
         return try {
             val response = apiService.markNotificationAsRead(idFilter = "eq.$notificationId")
             if (response.isSuccessful) {
+                db.notificationCacheDao().markRead(notificationId)
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to mark notification as read: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_mark_notification_read_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1362,12 +1792,13 @@ class UserRepositoryImpl(
 
     override suspend fun markNotificationsAsRead(): Result<Unit> {
         return try {
-            val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val myId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             val response = apiService.markNotificationsAsRead(recipientFilter = "eq.$myId")
             if (response.isSuccessful) {
+                db.notificationCacheDao().markAllRead()
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Failed to mark notifications as read: ${response.code()}"))
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_mark_notifications_read_failed, response.code().toString())))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -1377,7 +1808,10 @@ class UserRepositoryImpl(
     override suspend fun deleteNotification(notificationId: String): Result<Unit> {
         return try {
             val response = apiService.deleteNotifications("eq.$notificationId")
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete notification: ${response.code()}"))
+            if (response.isSuccessful) {
+                db.notificationCacheDao().deleteById(notificationId)
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_notification_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1388,13 +1822,22 @@ class UserRepositoryImpl(
         return try {
             val filter = "in.(${notificationIds.joinToString(",")})"
             val response = apiService.deleteNotifications(filter)
-            if (response.isSuccessful) Result.success(Unit) else Result.failure(Exception("Failed to delete notifications: ${response.code()}"))
+            if (response.isSuccessful) {
+                db.notificationCacheDao().deleteByIds(notificationIds)
+                Result.success(Unit)
+            } else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_delete_notifications_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
     override suspend fun getTrendingHashtags(): Result<List<Pair<String, Int>>> {
+        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_TRENDING_HASHTAGS) ?: 0L
+        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.TRENDING_HASHTAGS_TTL_MS)) {
+            val cached = db.trendingHashtagCacheDao().getAll().map { it.tag to it.count }
+            if (cached.isNotEmpty()) return Result.success(cached)
+        }
+
         return try {
             val response = apiService.getPosts()
             if (response.isSuccessful && response.body() != null) {
@@ -1412,23 +1855,30 @@ class UserRepositoryImpl(
                 val sortedTags = hashtagCounts.entries
                     .sortedByDescending { it.value }
                     .map { it.key to it.value }
+
+                val now = System.currentTimeMillis()
+                db.trendingHashtagCacheDao().replaceAll(sortedTags.map { TrendingHashtagCacheEntity(it.first, it.second, now) })
+                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_TRENDING_HASHTAGS, now))
+
                 Result.success(sortedTags)
             } else {
-                Result.success(emptyList())
+                val cached = db.trendingHashtagCacheDao().getAll().map { it.tag to it.count }
+                Result.success(cached)
             }
         } catch (e: Exception) {
-            Result.success(emptyList())
+            val cached = db.trendingHashtagCacheDao().getAll().map { it.tag to it.count }
+            Result.success(cached)
         }
     }
 
     override suspend fun registerDeviceToken(fcmToken: String): Result<Unit> {
         return try {
-            val userId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+            val userId = prefs.getUserId() ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_not_logged_in)))
             val response = apiService.upsertDeviceToken(
                 UpsertDeviceTokenRequest(user_id = userId, fcm_token = fcmToken)
             )
             if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Failed to register device token: ${response.code()}"))
+            else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_register_device_token_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -1438,7 +1888,7 @@ class UserRepositoryImpl(
         return try {
             val response = apiService.deleteDeviceToken("eq.$fcmToken")
             if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Failed to unregister device token: ${response.code()}"))
+            else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_unregister_device_token_failed, response.code().toString())))
         } catch (e: Exception) {
             Result.failure(e)
         }

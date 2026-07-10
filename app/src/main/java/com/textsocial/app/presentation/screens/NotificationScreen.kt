@@ -71,21 +71,21 @@ fun NotificationScreen(
         topBar = {
             if (isSelectMode) {
                 TopAppBar(
-                    title = { Text("${selectedIds.size} dipilih", fontWeight = FontWeight.Bold) },
+                    title = { Text(stringResource(R.string.notif_select_count_title, selectedIds.size), fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = { viewModel.toggleSelectMode() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Batalkan pilihan")
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.cd_cancel_selection))
                         }
                     },
                     actions = {
                         IconButton(onClick = { viewModel.selectAll() }) {
-                            Icon(Icons.Default.DoneAll, contentDescription = "Pilih semua")
+                            Icon(Icons.Default.DoneAll, contentDescription = stringResource(R.string.cd_select_all))
                         }
                         IconButton(
                             onClick = { showDeleteSelectedConfirm = true },
                             enabled = selectedIds.isNotEmpty()
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Hapus yang dipilih")
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.cd_delete_selected))
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -97,7 +97,7 @@ fun NotificationScreen(
                     title = { Text(stringResource(R.string.notif_title), fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Go back")
+                            Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.cd_go_back))
                         }
                     },
                     actions = {
@@ -105,12 +105,12 @@ fun NotificationScreen(
                             IconButton(onClick = {
                                 viewModel.markAllAsRead(onMarked = onAllNotificationsRead)
                             }) {
-                                Icon(Icons.Default.DoneAll, contentDescription = "Tandai semua sudah dibaca")
+                                Icon(Icons.Default.DoneAll, contentDescription = stringResource(R.string.cd_mark_all_read))
                             }
                         }
                         if (notifications.isNotEmpty()) {
                             IconButton(onClick = { viewModel.toggleSelectMode() }) {
-                                Icon(Icons.Default.Checklist, contentDescription = "Pilih notifikasi")
+                                Icon(Icons.Default.Checklist, contentDescription = stringResource(R.string.cd_select_notifications))
                             }
                         }
                     },
@@ -161,13 +161,13 @@ fun NotificationScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
                                     imageVector = Icons.Default.NotificationsNone,
-                                    contentDescription = "Empty activity alerts",
+                                    contentDescription = stringResource(R.string.cd_empty_notifications),
                                     tint = MaterialTheme.colorScheme.outline,
                                     modifier = Modifier.size(56.dp)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "No notifications yet",
+                                    text = stringResource(R.string.notif_empty_all),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
                                 )
@@ -178,18 +178,18 @@ fun NotificationScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
                                     imageVector = Icons.Default.NotificationsNone,
-                                    contentDescription = "Empty activity alerts",
+                                    contentDescription = stringResource(R.string.cd_empty_notifications),
                                     tint = MaterialTheme.colorScheme.outline,
                                     modifier = Modifier.size(56.dp)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
                                     text = when (selectedFilter) {
-                                        "like" -> "No like notifications yet"
-                                        "comment" -> "No comment notifications yet"
-                                        "mention" -> "No mention notifications yet"
-                                        "follow" -> "No follow notifications yet"
-                                        else -> "No notifications yet"
+                                        "like" -> stringResource(R.string.notif_empty_like)
+                                        "comment" -> stringResource(R.string.notif_empty_comment)
+                                        "mention" -> stringResource(R.string.notif_empty_mention)
+                                        "follow" -> stringResource(R.string.notif_empty_follow)
+                                        else -> stringResource(R.string.notif_empty_all)
                                     },
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp
@@ -234,12 +234,12 @@ fun NotificationScreen(
                     showDeleteSelectedConfirm = false
                     viewModel.deleteSelected()
                 }) {
-                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.delete_button), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteSelectedConfirm = false }) {
-                    Text("Batal")
+                    Text(stringResource(R.string.cancel_button))
                 }
             }
         )
@@ -338,7 +338,7 @@ private fun NotificationRow(
 
                 Icon(
                     imageVector = alertIcon,
-                    contentDescription = "Notification type Icon",
+                    contentDescription = stringResource(R.string.cd_notification_type_icon),
                     tint = iconColor,
                     modifier = Modifier.size(16.dp)
                 )

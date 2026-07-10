@@ -3,6 +3,7 @@ package com.textsocial.app.di
 import android.content.Context
 import com.textsocial.app.data.api.SupabaseClient
 import com.textsocial.app.data.local.EncryptedPreferencesManager
+import com.textsocial.app.data.local.db.AppDatabase
 import com.textsocial.app.data.repository.*
 import com.textsocial.app.domain.repository.*
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,7 @@ object ServiceLocator {
             try {
                 encryptedPreferencesManager.preInitialize()
                 val unusedService = apiService
+                val unusedDb = appDatabase
                 val unusedAuth = authRepository
             } catch (e: Exception) {
             }
@@ -37,23 +39,27 @@ object ServiceLocator {
         SupabaseClient.createService(getContext())
     }
 
+    val appDatabase: AppDatabase by lazy {
+        AppDatabase.getInstance(getContext())
+    }
+
     val authRepository: AuthRepository by lazy {
-        AuthRepositoryImpl(apiService, encryptedPreferencesManager)
+        AuthRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
     }
 
     val postRepository: PostRepository by lazy {
-        PostRepositoryImpl(apiService, encryptedPreferencesManager)
+        PostRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
     }
 
     val storyRepository: StoryRepository by lazy {
-        StoryRepositoryImpl(apiService, encryptedPreferencesManager)
+        StoryRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
     }
 
     val messageRepository: MessageRepository by lazy {
-        MessageRepositoryImpl(apiService, encryptedPreferencesManager)
+        MessageRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
     }
 
     val userRepository: UserRepository by lazy {
-        UserRepositoryImpl(apiService, encryptedPreferencesManager, getContext())
+        UserRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
     }
 }
