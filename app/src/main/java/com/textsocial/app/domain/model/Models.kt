@@ -34,8 +34,6 @@ data class Post(
     val linkPreview: LinkPreview? = null
 ) : Serializable
 
-// Metadata Open Graph (judul/deskripsi/gambar) dari link pertama yang ada di teks post,
-// diambil dari cache tabel link_previews (lihat PostRepositoryImpl.attachLinkPreviews).
 data class LinkPreview(
     val url: String,
     val title: String?,
@@ -53,11 +51,19 @@ data class Story(
     val expiresAt: String,
     val avatarColor: String,
     val views: List<String> = emptyList(),
+    val viewers: List<StoryViewer> = emptyList(),
     val backgroundColor: String = "#000000",
     val textColor: String = "#FFFFFF",
     val fontFamily: String = "default",
     val isVerified: Boolean = false,
     val avatarUrl: String? = null
+) : Serializable
+
+data class StoryViewer(
+    val username: String,
+    val avatarUrl: String? = null,
+    val avatarColor: String = "#607D8B",
+    val isVerified: Boolean = false
 ) : Serializable
 
 data class Comment(

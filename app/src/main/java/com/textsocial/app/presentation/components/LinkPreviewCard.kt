@@ -51,7 +51,6 @@ fun LinkPreviewCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    // Rasio 1.91:1 -- rasio standar gambar og:image di kebanyakan situs
                     .aspectRatio(1.91f)
                     .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant)

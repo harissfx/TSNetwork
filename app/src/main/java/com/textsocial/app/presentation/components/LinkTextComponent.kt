@@ -21,31 +21,16 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import java.util.regex.Pattern
 
-// PENTING: dulu ini pakai `ClickableText`, yang punya gesture detector (pointerInput) sendiri
-// buat nangkep tap. Begitu komponen ini dipasang DI DALAM/DI BAWAH modifier `combinedClickable`
-// milik parent (mis. bubble chat, atau area salin komentar), gesture detector `ClickableText`
-// itu "menang" duluan dan bikin gesture detector parent-nya (termasuk long-press-nya) nggak
-// pernah kepanggil sama sekali -- makanya fitur tahan-buat-salin sempat nggak jalan.
-// Fix-nya: satuin SEMUA deteksi gesture (tap link, tap fallback, & long-press) jadi SATU
-// `detectTapGestures` di sini, jangan taruh gesture detector terpisah di composable luar.
 @Composable
 fun LinkTextComponent(
     text: String,
     modifier: Modifier = Modifier,
     style: TextStyle = TextStyle.Default,
-    // Default-nya sama seperti sebelumnya (dipakai di feed & detail post). Chat DM meng-override
-    // ini karena warna bubble-nya berubah-ubah (primary utk pesan sendiri, secondaryContainer
-    // utk lawan bicara) -- link warna biru default bisa nyaris tak kelihatan di atas bubble
-    // yang warnanya sama-sama primary.
     textColor: Color? = null,
     linkColor: Color? = null,
     onHashtagClick: ((String) -> Unit)? = null,
     onMentionClick: ((String) -> Unit)? = null,
-    // Dipanggil kalau user tap di teks TAPI bukan di atas link/hashtag/mention (mis. dipakai
-    // buat "tap bubble buat kirim ulang pesan yang gagal" di chat).
     onTapFallback: (() -> Unit)? = null,
-    // Dipanggil kalau user tahan (long-press) di teks -- dipakai buat "salin teks" di komentar
-    // & chat, dan buka menu pesan di chat.
     onLongPress: (() -> Unit)? = null
 ) {
     val context = LocalContext.current

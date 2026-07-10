@@ -2,6 +2,10 @@ package com.textsocial.app.presentation.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +40,7 @@ import com.textsocial.app.presentation.viewmodel.ProfileViewModel
 fun ProfileScreen(
     userId: String,
     viewModel: ProfileViewModel,
+    storyViewModel: com.textsocial.app.presentation.viewmodel.StoryViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToEditProfile: () -> Unit,
     onNavigateToChat: (String, String) -> Unit,
@@ -47,6 +52,7 @@ fun ProfileScreen(
     onNavigateToProfileMe: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToFollowList: (userId: String, username: String, tab: Int) -> Unit,
+    onNavigateToStories: () -> Unit,
     showBottomBar: Boolean = true
 ) {
     val user by viewModel.user.collectAsState()
@@ -54,6 +60,7 @@ fun ProfileScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
+    val allStories by storyViewModel.allStories.collectAsState()
     val isFollowActionLoading by viewModel.isFollowActionLoading.collectAsState()
     val actionError by viewModel.actionError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -133,12 +140,40 @@ fun ProfileScreen(
                                         .padding(horizontal = 16.dp, vertical = 10.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    UserAvatarComponent(
-                                        username = profile.username,
-                                        avatarColor = profile.avatarColor,
-                                        avatarUrl = profile.avatarUrl,
-                                        size = AvatarSize.LARGE
+                                    val profileHasActiveStory = remember(allStories, profile.id) {
+                                        allStories.any { it.userId == profile.id }
+                                    }
+                                    val profileStoryRingBrush = Brush.sweepGradient(
+                                        listOf(
+                                            Color(0xFFFEDA75),
+                                            Color(0xFFFA7E1E),
+                                            Color(0xFFD62976),
+                                            Color(0xFF962FBF),
+                                            Color(0xFF4F5BD5),
+                                            Color(0xFFFEDA75)
+                                        )
                                     )
+                                    Box(
+                                        modifier = if (profileHasActiveStory) {
+                                            Modifier
+                                                .padding(3.dp)
+                                                .border(width = 2.5.dp, brush = profileStoryRingBrush, shape = CircleShape)
+                                                .padding(3.dp)
+                                                .clickable {
+                                                    storyViewModel.viewSingleUserStories(profile.id)
+                                                    onNavigateToStories()
+                                                }
+                                        } else {
+                                            Modifier
+                                        }
+                                    ) {
+                                        UserAvatarComponent(
+                                            username = profile.username,
+                                            avatarColor = profile.avatarColor,
+                                            avatarUrl = profile.avatarUrl,
+                                            size = AvatarSize.LARGE
+                                        )
+                                    }
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -24,9 +24,6 @@ interface PostRepository {
     suspend fun deleteComment(commentId: String): Result<Unit>
     suspend fun likeComment(commentId: String): Result<Unit>
     suspend fun unlikeComment(commentId: String): Result<Unit>
-
-    // Dipanggil real-time dari form Buat Post (debounced) saat link terdeteksi di teks yang
-    // sedang diketik. Return null kalau URL tidak punya metadata OG yang bisa diambil.
     suspend fun getLinkPreview(url: String): Result<LinkPreview?>
 }
 

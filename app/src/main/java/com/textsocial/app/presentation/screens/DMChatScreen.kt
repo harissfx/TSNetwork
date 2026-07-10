@@ -265,10 +265,6 @@ fun DMChatScreen(
                                         com.textsocial.app.presentation.components.LinkTextComponent(
                                             text = msg.text,
                                             textColor = bubbleTextColor,
-                                            // Link dikasih warna sama kayak teks bubble-nya (cukup dibedain
-                                            // pakai garis bawah) -- soalnya warna bubble berubah-ubah
-                                            // (primary/secondaryContainer/errorContainer), jadi warna link
-                                            // "biru default" bisa nyaris nggak keliatan di bubble tertentu.
                                             linkColor = bubbleTextColor,
                                             style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -280,10 +276,6 @@ fun DMChatScreen(
                                                     messageForDeleteMenu = null
                                                     viewModel.discardFailedMessage(msg.id)
                                                 } else if (!msg.isPending) {
-                                                    // Menu-nya berlaku buat pesan siapa aja (bukan cuma pesan
-                                                    // sendiri) karena sekarang isinya ada opsi "Salin pesan" yang
-                                                    // berlaku juga buat pesan dari lawan bicara. Opsi "Hapus" di
-                                                    // menu tetap cuma muncul kalau itu pesan sendiri.
                                                     messageForDeleteMenu = msg.id
                                                 }
                                             }

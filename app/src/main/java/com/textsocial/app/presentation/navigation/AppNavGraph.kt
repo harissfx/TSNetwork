@@ -155,6 +155,7 @@ fun AppNavGraph(
             ProfileScreen(
                 userId = userId,
                 viewModel = profileViewModel,
+                storyViewModel = storyViewModel,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
                 onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
@@ -182,7 +183,8 @@ fun AppNavGraph(
                 onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
                 onNavigateToFollowList = { uid, uname, tab ->
                     navController.navigate(Routes.followList(uid, uname, tab))
-                }
+                },
+                onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) }
             )
         }
 

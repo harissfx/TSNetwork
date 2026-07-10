@@ -108,7 +108,6 @@ fun SearchScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (searchQuery.isEmpty()) {
-                // Trending Section
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,

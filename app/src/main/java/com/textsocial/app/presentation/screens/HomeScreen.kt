@@ -485,8 +485,6 @@ fun PostItem(
                                 showPostMenu = false
                             }
                         )
-                        // Cuma pemilik post yang bisa hapus -- orang lain nggak mungkin ada opsi ini,
-                        // makanya hanya di-render kalau post.userId cocok sama user yang lagi login.
                         if (post.userId == myId && onDeleteClick != null) {
                             DropdownMenuItem(
                                 text = { Text("Hapus postingan", color = MaterialTheme.colorScheme.error) },

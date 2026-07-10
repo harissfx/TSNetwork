@@ -237,8 +237,6 @@ interface SupabaseApiService {
         @Body updates: DeleteMessageRequest = DeleteMessageRequest()
     ): Response<Void>
 
-    // Sembunyikan chat dari daftar DM untuk satu sisi saja (bukan hapus beneran),
-    // dipakai lewat 2 endpoint terpisah tergantung posisi user di conversation (user1/user2)
     @PATCH("rest/v1/conversations")
     suspend fun hideConversationsForUser1(
         @Query("id") idFilter: String,
@@ -291,16 +289,11 @@ interface SupabaseApiService {
         @Query("fcm_token") tokenFilter: String
     ): Response<Void>
 
-    // Dipanggil real-time saat user mengetik link di form Buat Post. Edge Function ini yang
-    // fetch & parse HTML situs tujuan (bukan client), lalu simpan hasilnya ke tabel
-    // link_previews sebagai cache untuk dibaca ulang oleh getLinkPreviewsCached di bawah.
     @POST("functions/v1/link-preview")
     suspend fun fetchLinkPreview(
         @Body request: LinkPreviewRequest
     ): Response<LinkPreviewDto>
 
-    // Baca cache link_previews untuk sekumpulan URL sekaligus (dipakai saat render feed,
-    // supaya tidak fetch 1-per-1 ke Edge Function tiap kali feed di-load).
     @GET("rest/v1/link_previews")
     suspend fun getLinkPreviewsCached(
         @Query("url") urlInFilter: String,

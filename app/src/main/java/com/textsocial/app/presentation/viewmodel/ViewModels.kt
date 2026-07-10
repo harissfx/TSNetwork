@@ -33,10 +33,6 @@ class BadgeViewModel : ViewModel() {
 
     init {
         refreshAll()
-        // Dengerin push notification yang masuk selagi app-nya jalan (FcmService yang teriak
-        // lewat NotificationEventBus), biar badge count langsung update seketika -- tanpa ini,
-        // count-nya cuma ke-fetch sekali pas app dibuka dan gak pernah nambah lagi sampai user
-        // buka manual layar Notifikasi/Chat.
         viewModelScope.launch {
             com.textsocial.app.util.NotificationEventBus.events.collect { type ->
                 if (type == "dm") refreshUnreadMessages() else refreshUnreadNotifications()
@@ -408,8 +404,6 @@ class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         checkForLinkPreview(_text.value)
     }
 
-    // Debounced: tunggu user berhenti mengetik ~600ms sebelum benar-benar hit Edge Function,
-    // supaya tidak spam request tiap ketikan huruf.
     private fun checkForLinkPreview(text: String) {
         val url = com.textsocial.app.util.LinkUtils.extractFirstUrl(text)
 
@@ -429,8 +423,6 @@ class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
             _isLoadingLinkPreview.value = true
             kotlinx.coroutines.delay(600)
             val result = postRepo.getLinkPreview(url)
-            // Kalau user sudah lanjut ngetik & url berubah (atau link dihapus) selagi request
-            // ini jalan, buang hasilnya -- jangan sampai preview link lama nyangkut.
             if (lastCheckedUrl == url) {
                 _linkPreview.value = result.getOrNull()
                 _isLoadingLinkPreview.value = false
@@ -660,6 +652,9 @@ class StoryViewModel : ViewModel() {
     private val _stories = MutableStateFlow<List<Story>>(emptyList())
     val stories = _stories.asStateFlow()
 
+    private val _allStories = MutableStateFlow<List<Story>>(emptyList())
+    val allStories = _allStories.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -704,27 +699,48 @@ class StoryViewModel : ViewModel() {
         _selectedStoryIndex.value = index
     }
 
+    private var singleUserViewId: String? = null
+
     init {
         loadStories()
     }
 
     fun loadStories() {
+        singleUserViewId = null
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
-            val result = storyRepo.getStories()
-            val rawStories = result.getOrDefault(emptyList())
-            val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
-            val followingIds = userRepo.getFollowingUsers().getOrDefault(emptyList()).map { it.id }.toSet()
-            val visibleStories = rawStories.filter { it.userId == myId || followingIds.contains(it.userId) }
-            val grouped = visibleStories
-                .groupBy { it.userId }
-                .values
-                .map { userStories -> userStories.sortedBy { it.createdAt } }
-                .sortedByDescending { userGroup -> userGroup.maxOf { it.createdAt } }
-                .flatten()
-            _stories.value = grouped
+            val rawStories = fetchAndApplyAllStories()
+            applyFollowingGroupedStories(rawStories)
             _isLoading.value = false
         }
+    }
+
+    fun viewSingleUserStories(userId: String) {
+        val userStories = _allStories.value.filter { it.userId == userId }.sortedBy { it.createdAt }
+        if (userStories.isEmpty()) return
+        singleUserViewId = userId
+        _stories.value = userStories
+        _selectedStoryIndex.value = 0
+    }
+
+    private suspend fun fetchAndApplyAllStories(): List<Story> {
+        val result = storyRepo.getStories()
+        val rawStories = result.getOrDefault(emptyList())
+        _allStories.value = rawStories
+        return rawStories
+    }
+
+    private suspend fun applyFollowingGroupedStories(rawStories: List<Story>) {
+        val myId = ServiceLocator.encryptedPreferencesManager.getUserId()
+        val followingIds = userRepo.getFollowingUsers().getOrDefault(emptyList()).map { it.id }.toSet()
+        val visibleStories = rawStories.filter { it.userId == myId || followingIds.contains(it.userId) }
+        val grouped = visibleStories
+            .groupBy { it.userId }
+            .values
+            .map { userStories -> userStories.sortedBy { it.createdAt } }
+            .sortedByDescending { userGroup -> userGroup.maxOf { it.createdAt } }
+            .flatten()
+        _stories.value = grouped
     }
 
     fun onStoryTextChange(value: String) {
@@ -785,7 +801,16 @@ class StoryViewModel : ViewModel() {
     fun markStoryAsViewed(storyId: String, storyOwnerId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             storyRepo.recordStoryView(storyId)
-            loadStories()
+            val rawStories = fetchAndApplyAllStories()
+            val viewingUserId = singleUserViewId
+            if (viewingUserId != null) {
+                val refreshedUserStories = rawStories.filter { it.userId == viewingUserId }.sortedBy { it.createdAt }
+                if (refreshedUserStories.isNotEmpty()) {
+                    _stories.value = refreshedUserStories
+                }
+            } else {
+                applyFollowingGroupedStories(rawStories)
+            }
         }
     }
 
@@ -1048,7 +1073,6 @@ class NotificationViewModel : ViewModel() {
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError = _actionError.asStateFlow()
 
-    // Tab pemisah aktivitas: "all", "like", "comment", "mention", "follow"
     private val _selectedFilter = MutableStateFlow("all")
     val selectedFilter = _selectedFilter.asStateFlow()
 
@@ -1147,7 +1171,6 @@ class NotificationViewModel : ViewModel() {
     }
 
     fun selectAll() {
-        // Pilih semua sesuai tab yang sedang aktif, bukan seluruh notifikasi.
         _selectedIds.value = filteredNotifications.value.map { it.id }.toSet()
     }
 

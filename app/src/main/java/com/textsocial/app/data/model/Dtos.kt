@@ -161,8 +161,6 @@ data class LinkPreviewRequest(
     val url: String
 )
 
-// Dipakai untuk 2 sumber: response Edge Function `link-preview` (real-time saat mengetik)
-// dan baris cache dari tabel rest/v1/link_previews (batch saat load feed). Skemanya sama persis.
 @JsonClass(generateAdapter = true)
 data class LinkPreviewDto(
     val url: String,
@@ -315,9 +313,6 @@ data class ConversationDto(
     val messages: List<MessageDto> = emptyList()
 )
 
-
-// Kirim hanya satu kolom per request supaya tidak menimpa status hidden_for_userX
-// milik pihak lain di percakapan yang sama (lihat MessageRepositoryImpl.hideConversations).
 @JsonClass(generateAdapter = true)
 data class HideConversationForUser1Request(
     val hidden_for_user1: Boolean = true

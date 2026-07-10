@@ -257,10 +257,6 @@ class PostRepositoryImpl(
                 val likedPostIds = if (likesResponse.isSuccessful) {
                     likesResponse.body()?.map { it.post_id }?.toSet() ?: emptySet()
                 } else emptySet()
-
-                // Kumpulkan URL pertama dari tiap post (kalau ada), lalu ambil metadata OG-nya
-                // sekaligus dalam 1 request ke cache link_previews -- bukan 1 request per post,
-                // supaya nge-load feed tidak jadi lambat/boros.
                 val urlsByPostId = dtos.associate { it.id to com.textsocial.app.util.LinkUtils.extractFirstUrl(it.content) }
                 val previewsByUrl = fetchCachedLinkPreviews(urlsByPostId.values.filterNotNull().distinct())
 
@@ -497,10 +493,6 @@ class PostRepositoryImpl(
         }
     }
 
-    // Dipanggil (debounced) dari form Buat Post. Ini yang memicu Edge Function untuk benar-benar
-    // fetch HTML situs tujuan & parse og:tag-nya -- hasilnya otomatis ikut ke-cache di tabel
-    // link_previews oleh Edge Function itu sendiri, jadi request dari getPosts() berikutnya
-    // untuk URL yang sama tinggal baca cache tanpa fetch ulang.
     override suspend fun getLinkPreview(url: String): Result<LinkPreview?> {
         return try {
             val response = apiService.fetchLinkPreview(com.textsocial.app.data.model.LinkPreviewRequest(url))
@@ -514,9 +506,6 @@ class PostRepositoryImpl(
         }
     }
 
-    // Ambil metadata OG utk banyak URL sekaligus dari cache (bukan dari Edge Function), dipakai
-    // saat nge-load feed. Kalau gagal/kosong, cukup dianggap "belum ada preview" (bukan error
-    // fatal) -- feed tetap harus bisa tampil walau tabel link_previews kosong/bermasalah.
     private suspend fun fetchCachedLinkPreviews(urls: List<String>): Map<String, LinkPreview> {
         if (urls.isEmpty()) return emptyMap()
         return try {
@@ -552,14 +541,31 @@ class StoryRepositoryImpl(
             val nowString = sdf.format(Date())
             val response = apiService.getStories("gt.$nowString")
             if (response.isSuccessful && response.body() != null) {
-                val stories = response.body()!!.map { dto ->
-                    val viewsResponse = apiService.getStoryViews("eq.${dto.id}")
-                    val viewerUsernames = if (viewsResponse.isSuccessful) {
-                        viewsResponse.body()?.map { it.viewer_username } ?: emptyList()
-                    } else emptyList()
+                val dtos = response.body()!!
 
+                val viewerUsernamesByStoryId = dtos.associate { dto ->
+                    val viewsResponse = apiService.getStoryViews("eq.${dto.id}")
+                    dto.id to (if (viewsResponse.isSuccessful) {
+                        viewsResponse.body()?.map { it.viewer_username } ?: emptyList()
+                    } else emptyList())
+                }
+
+                val allViewerUsernames = viewerUsernamesByStoryId.values.flatten().distinct()
+                val viewerProfilesByUsername = fetchProfilesByUsernames(allViewerUsernames)
+
+                val stories = dtos.map { dto ->
+                    val viewerUsernames = viewerUsernamesByStoryId[dto.id] ?: emptyList()
                     val senderUsername = dto.users?.username ?: "user"
-                    val filteredViewers = viewerUsernames.filter { it != senderUsername }
+                    val filteredViewerUsernames = viewerUsernames.filter { it != senderUsername }
+                    val filteredViewers = filteredViewerUsernames.map { username ->
+                        val viewerProfile = viewerProfilesByUsername[username]
+                        StoryViewer(
+                            username = username,
+                            avatarUrl = viewerProfile?.avatar_url,
+                            avatarColor = getAvatarColor(username),
+                            isVerified = viewerProfile?.is_verified ?: false
+                        )
+                    }
                     Story(
                         id = dto.id,
                         userId = dto.user_id,
@@ -568,7 +574,8 @@ class StoryRepositoryImpl(
                         createdAt = dto.created_at,
                         expiresAt = dto.expires_at,
                         avatarColor = getAvatarColor(senderUsername),
-                        views = filteredViewers,
+                        views = filteredViewerUsernames,
+                        viewers = filteredViewers,
                         backgroundColor = dto.background_color ?: "#000000",
                         textColor = dto.text_color ?: "#FFFFFF",
                         fontFamily = dto.font_family ?: "default",
@@ -582,6 +589,19 @@ class StoryRepositoryImpl(
             }
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private suspend fun fetchProfilesByUsernames(usernames: List<String>): Map<String, ProfileDto> {
+        if (usernames.isEmpty()) return emptyMap()
+        return try {
+            val filterValue = "in.(${usernames.joinToString(",")})"
+            val response = apiService.getProfilesByUsername(filterValue)
+            if (response.isSuccessful) {
+                response.body()?.associateBy { it.username } ?: emptyMap()
+            } else emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
         }
     }
 
@@ -953,9 +973,6 @@ class MessageRepositoryImpl(
         if (otherUserIds.isEmpty()) return Result.success(Unit)
         val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
         return try {
-            // ID conversation diurutkan alfabetis ("user1Id_user2Id"), jadi posisi saya sebagai
-            // user1 atau user2 tergantung perbandingan string myId vs otherUserId, bukan tetap.
-            // Dikelompokkan dulu supaya paling banyak cuma 2 request PATCH walau yang dipilih banyak.
             val idsWhereImUser1 = otherUserIds.filter { myId < it }.map { getConversationId(myId, it) }
             val idsWhereImUser2 = otherUserIds.filter { myId >= it }.map { getConversationId(myId, it) }
 

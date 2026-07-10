@@ -11,7 +11,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,6 +56,7 @@ fun StoryScreen(
     var currentStoryIndex by remember(initialIndex) { mutableStateOf(initialIndex) }
     var progress by remember { mutableStateOf(0f) }
     var showViewersSheet by remember { mutableStateOf(false) }
+    var isHeldDown by remember { mutableStateOf(false) }
 
     fun goToStory(newIndex: Int) {
         progress = 0f
@@ -67,7 +71,9 @@ fun StoryScreen(
 
             while (progress < 1.0f) {
                 delay(50)
-                progress += 0.02f
+                if (!isHeldDown && !showViewersSheet) {
+                    progress += 0.02f
+                }
             }
             if (currentStoryIndex < stories.size - 1) {
                 goToStory(currentStoryIndex + 1)
@@ -242,14 +248,22 @@ fun StoryScreen(
                                         .weight(1f)
                                         .fillMaxWidth()
                                         .pointerInput(currentStoryIndex, stories.size) {
-                                            detectTapGestures(onTap = { offset ->
-                                                if (offset.x < size.width / 2f) {
-                                                    if (currentStoryIndex > 0) goToStory(currentStoryIndex - 1)
-                                                } else {
-                                                    if (currentStoryIndex < stories.size - 1) goToStory(currentStoryIndex + 1)
-                                                    else onNavigateBack()
+                                            awaitEachGesture {
+                                                val down = awaitFirstDown(requireUnconsumed = false)
+                                                val pressStartTime = System.currentTimeMillis()
+                                                isHeldDown = true
+                                                val upEvent = waitForUpOrCancellation()
+                                                isHeldDown = false
+                                                val heldDuration = System.currentTimeMillis() - pressStartTime
+                                                if (upEvent != null && heldDuration < 250) {
+                                                    if (down.position.x < size.width / 2f) {
+                                                        if (currentStoryIndex > 0) goToStory(currentStoryIndex - 1)
+                                                    } else {
+                                                        if (currentStoryIndex < stories.size - 1) goToStory(currentStoryIndex + 1)
+                                                        else onNavigateBack()
+                                                    }
                                                 }
-                                            })
+                                            }
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -315,6 +329,17 @@ fun StoryScreen(
                     }
                 }
 
+                if (showViewersSheet && isOwnStory) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() }
+                            ) { showViewersSheet = false }
+                    )
+                }
+
                 AnimatedVisibility(
                     visible = showViewersSheet && isOwnStory,
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -345,8 +370,8 @@ fun StoryScreen(
                             }
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            val otherViewers = remember(story.views, myUsername) {
-                                story.views.filterNot { it == myUsername }
+                            val otherViewers = remember(story.viewers, myUsername) {
+                                story.viewers.filterNot { it.username == myUsername }
                             }
 
                             if (otherViewers.isEmpty()) {
@@ -370,16 +395,21 @@ fun StoryScreen(
                                     otherViewers.forEach { viewer ->
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             UserAvatarComponent(
-                                                username = viewer,
-                                                avatarColor = "#607D8B",
+                                                username = viewer.username,
+                                                avatarColor = viewer.avatarColor,
+                                                avatarUrl = viewer.avatarUrl,
                                                 size = AvatarSize.COMPACT
                                             )
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Text(
-                                                text = viewer,
+                                                text = viewer.username,
                                                 fontWeight = FontWeight.Medium,
                                                 fontSize = 14.sp
                                             )
+                                            if (viewer.isVerified) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                VerifiedBadge(size = 14.dp)
+                                            }
                                         }
                                     }
                                 }

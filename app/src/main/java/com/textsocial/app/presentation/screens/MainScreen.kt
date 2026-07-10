@@ -167,6 +167,7 @@ fun MainScreen(
                 TAB_PROFILE -> ProfileScreen(
                     userId = "me_id",
                     viewModel = profileViewModel,
+                    storyViewModel = storyViewModel,
                     onNavigateBack = { mainTabViewModel.goToTab(TAB_HOME) },
                     onNavigateToEditProfile = onNavigateToEditProfile,
                     onNavigateToChat = onNavigateToChat,
@@ -178,6 +179,7 @@ fun MainScreen(
                     onNavigateToProfileMe = { /* sudah di tab ini */ },
                     onNavigateToSettings = onNavigateToSettings,
                     onNavigateToFollowList = onNavigateToFollowList,
+                    onNavigateToStories = onNavigateToStories,
                     showBottomBar = false
                 )
             }
