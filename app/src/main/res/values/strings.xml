@@ -115,6 +115,11 @@
     <string name="notif_started_following">started following you</string>
     <string name="notif_mentioned_you">mentioned you in a post</string>
     <string name="notif_generic">sent you a notification</string>
+    <string name="notif_tab_all">All</string>
+    <string name="notif_tab_like">Like</string>
+    <string name="notif_tab_comment">Comment</string>
+    <string name="notif_tab_mention">Mention</string>
+    <string name="notif_tab_follow">Follow</string>
     <string name="no_view">No views recorded yet.</string>
     <string name="rpl_title">Replies</string>
     <string name="rpl_postkos">No replies yet. Start the conversation!</string>
@@ -133,6 +138,8 @@
     <string name="error_username_update_failed">Failed to update username: %1$s</string>
     <string name="dm_kosong">No private chats yet</string>
     <string name="dm_kosongdesc">Navigate to profiles to start messaging</string>
+    <string name="dm_del_title">Delete %1$s chat(s)?</string>
+    <string name="dm_del_desc">The selected chats will be removed from your inbox. The other person will still be able to see the conversation, and it will reappear if they send you a new message.</string>
     <string name="feed_kosong">No posts found yet. Be the first to share!</string>
     <string name="prof_kosong">No posts shared by this user yet.</string>
     <string name="notification_channel_general_name">General notifications</string>

@@ -30,7 +30,18 @@ data class Post(
     val commentsCount: Int,
     val isLiked: Boolean = false,
     val isVerified: Boolean = false,
-    val userAvatarUrl: String? = null
+    val userAvatarUrl: String? = null,
+    val linkPreview: LinkPreview? = null
+) : Serializable
+
+// Metadata Open Graph (judul/deskripsi/gambar) dari link pertama yang ada di teks post,
+// diambil dari cache tabel link_previews (lihat PostRepositoryImpl.attachLinkPreviews).
+data class LinkPreview(
+    val url: String,
+    val title: String?,
+    val description: String?,
+    val imageUrl: String?,
+    val siteName: String?
 ) : Serializable
 
 data class Story(

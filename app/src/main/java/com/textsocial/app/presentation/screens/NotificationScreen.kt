@@ -47,6 +47,8 @@ fun NotificationScreen(
     showBottomBar: Boolean = true
 ) {
     val notifications by viewModel.notifications.collectAsState()
+    val filteredNotifications by viewModel.filteredNotifications.collectAsState()
+    val selectedFilter by viewModel.selectedFilter.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isSelectMode by viewModel.isSelectMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
@@ -138,52 +140,83 @@ fun NotificationScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                if (isLoading && notifications.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else if (notifications.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsNone,
-                                contentDescription = "Empty activity alerts",
-                                tint = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.size(56.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "No notifications yet",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                if (!isSelectMode && notifications.isNotEmpty()) {
+                    NotificationFilterTabs(
+                        selectedFilter = selectedFilter,
+                        onSelectFilter = { viewModel.selectFilter(it) }
+                    )
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    if (isLoading && notifications.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
                         }
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(notifications, key = { it.id }) { alert ->
-                            NotificationRow(
-                                alert = alert,
-                                context = context,
-                                isSelectMode = isSelectMode,
-                                isSelected = selectedIds.contains(alert.id),
-                                onToggleSelected = { viewModel.toggleSelected(alert.id) },
-                                onLongPress = { viewModel.enterSelectModeWith(alert.id) },
-                                onClick = {
-                                    viewModel.markAsRead(alert, onMarked = onNotificationRead)
-                                    if (alert.type == "follow") {
-                                        onNavigateToProfile(alert.senderId)
-                                    } else if (alert.postId != null) {
-                                        onNavigateToPostDetail(alert.postId, alert.commentId)
+                    } else if (notifications.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsNone,
+                                    contentDescription = "Empty activity alerts",
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "No notifications yet",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+                    } else if (filteredNotifications.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.NotificationsNone,
+                                    contentDescription = "Empty activity alerts",
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = when (selectedFilter) {
+                                        "like" -> "No like notifications yet"
+                                        "comment" -> "No comment notifications yet"
+                                        "mention" -> "No mention notifications yet"
+                                        "follow" -> "No follow notifications yet"
+                                        else -> "No notifications yet"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(filteredNotifications, key = { it.id }) { alert ->
+                                NotificationRow(
+                                    alert = alert,
+                                    context = context,
+                                    isSelectMode = isSelectMode,
+                                    isSelected = selectedIds.contains(alert.id),
+                                    onToggleSelected = { viewModel.toggleSelected(alert.id) },
+                                    onLongPress = { viewModel.enterSelectModeWith(alert.id) },
+                                    onClick = {
+                                        viewModel.markAsRead(alert, onMarked = onNotificationRead)
+                                        if (alert.type == "follow") {
+                                            onNavigateToProfile(alert.senderId)
+                                        } else if (alert.postId != null) {
+                                            onNavigateToPostDetail(alert.postId, alert.commentId)
+                                        }
                                     }
-                                }
-                            )
-                            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                )
+                                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            }
                         }
                     }
                 }
@@ -210,6 +243,42 @@ fun NotificationScreen(
                 }
             }
         )
+    }
+}
+
+private val notificationFilterTabs = listOf(
+    "all" to R.string.notif_tab_all,
+    "like" to R.string.notif_tab_like,
+    "comment" to R.string.notif_tab_comment,
+    "mention" to R.string.notif_tab_mention,
+    "follow" to R.string.notif_tab_follow
+)
+
+@Composable
+private fun NotificationFilterTabs(
+    selectedFilter: String,
+    onSelectFilter: (String) -> Unit
+) {
+    val selectedIndex = notificationFilterTabs.indexOfFirst { it.first == selectedFilter }.coerceAtLeast(0)
+    ScrollableTabRow(
+        selectedTabIndex = selectedIndex,
+        containerColor = MaterialTheme.colorScheme.background,
+        edgePadding = 14.dp,
+        divider = { Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) }
+    ) {
+        notificationFilterTabs.forEachIndexed { index, (key, labelRes) ->
+            Tab(
+                selected = selectedIndex == index,
+                onClick = { onSelectFilter(key) },
+                text = {
+                    Text(
+                        text = stringResource(labelRes),
+                        fontSize = 13.sp,
+                        fontWeight = if (selectedIndex == index) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            )
+        }
     }
 }
 

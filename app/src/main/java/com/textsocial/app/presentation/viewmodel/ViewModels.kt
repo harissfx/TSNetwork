@@ -33,6 +33,15 @@ class BadgeViewModel : ViewModel() {
 
     init {
         refreshAll()
+        // Dengerin push notification yang masuk selagi app-nya jalan (FcmService yang teriak
+        // lewat NotificationEventBus), biar badge count langsung update seketika -- tanpa ini,
+        // count-nya cuma ke-fetch sekali pas app dibuka dan gak pernah nambah lagi sampai user
+        // buka manual layar Notifikasi/Chat.
+        viewModelScope.launch {
+            com.textsocial.app.util.NotificationEventBus.events.collect { type ->
+                if (type == "dm") refreshUnreadMessages() else refreshUnreadNotifications()
+            }
+        }
     }
 
     fun refreshAll() {
@@ -383,12 +392,59 @@ class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     private val _isFinished = MutableStateFlow(false)
     val isFinished = _isFinished.asStateFlow()
 
+    // Preview link real-time (mirip WA) yang muncul saat user mengetik URL di form Buat Post.
+    private val _linkPreview = MutableStateFlow<LinkPreview?>(null)
+    val linkPreview = _linkPreview.asStateFlow()
+
+    private val _isLoadingLinkPreview = MutableStateFlow(false)
+    val isLoadingLinkPreview = _isLoadingLinkPreview.asStateFlow()
+
     private var isSubmitting = false
+    private var linkPreviewJob: kotlinx.coroutines.Job? = null
+    private var lastCheckedUrl: String? = null
 
     fun onTextChange(value: String) {
-        if (value.length <= 500) {
-            _text.value = value
+        _text.value = if (value.length > 3000) value.take(3000) else value
+        checkForLinkPreview(_text.value)
+    }
+
+    // Debounced: tunggu user berhenti mengetik ~600ms sebelum benar-benar hit Edge Function,
+    // supaya tidak spam request tiap ketikan huruf.
+    private fun checkForLinkPreview(text: String) {
+        val url = com.textsocial.app.util.LinkUtils.extractFirstUrl(text)
+
+        if (url == null) {
+            linkPreviewJob?.cancel()
+            lastCheckedUrl = null
+            _linkPreview.value = null
+            _isLoadingLinkPreview.value = false
+            return
         }
+
+        if (url == lastCheckedUrl) return
+        lastCheckedUrl = url
+
+        linkPreviewJob?.cancel()
+        linkPreviewJob = viewModelScope.launch {
+            _isLoadingLinkPreview.value = true
+            kotlinx.coroutines.delay(600)
+            val result = postRepo.getLinkPreview(url)
+            // Kalau user sudah lanjut ngetik & url berubah (atau link dihapus) selagi request
+            // ini jalan, buang hasilnya -- jangan sampai preview link lama nyangkut.
+            if (lastCheckedUrl == url) {
+                _linkPreview.value = result.getOrNull()
+                _isLoadingLinkPreview.value = false
+            }
+        }
+    }
+
+    fun resetComposerState() {
+        _text.value = ""
+        _isFinished.value = false
+        linkPreviewJob?.cancel()
+        lastCheckedUrl = null
+        _linkPreview.value = null
+        _isLoadingLinkPreview.value = false
     }
 
     fun createPost() {
@@ -451,6 +507,22 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
 
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError = _actionError.asStateFlow()
+
+    private val _isPostDeleted = MutableStateFlow(false)
+    val isPostDeleted = _isPostDeleted.asStateFlow()
+
+    fun deletePost() {
+        val currentPost = _post.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = postRepo.deletePost(currentPost.id)
+            if (result.isSuccess) {
+                homeViewModel.removePostById(currentPost.id)
+                _isPostDeleted.value = true
+            } else {
+                _actionError.value = "Gagal menghapus postingan. Coba lagi."
+            }
+        }
+    }
 
     fun clearActionError() {
         _actionError.value = null
@@ -747,6 +819,19 @@ class DMListViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    private val _isSelectMode = MutableStateFlow(false)
+    val isSelectMode = _isSelectMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedIds = _selectedIds.asStateFlow()
+
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError = _actionError.asStateFlow()
+
+    fun clearActionError() {
+        _actionError.value = null
+    }
+
     init {
         loadConversations()
     }
@@ -757,6 +842,53 @@ class DMListViewModel : ViewModel() {
             val result = msgRepo.getConversations()
             _conversations.value = result.getOrDefault(emptyList())
             _isLoading.value = false
+        }
+    }
+
+    fun toggleSelectMode() {
+        _isSelectMode.update { !it }
+        if (!_isSelectMode.value) _selectedIds.value = emptySet()
+    }
+
+    fun enterSelectModeWith(conversationId: String) {
+        _isSelectMode.value = true
+        _selectedIds.value = setOf(conversationId)
+    }
+
+    fun toggleSelected(conversationId: String) {
+        _selectedIds.update { current ->
+            if (current.contains(conversationId)) current - conversationId else current + conversationId
+        }
+    }
+
+    fun selectAll() {
+        _selectedIds.value = _conversations.value.map { it.id }.toSet()
+    }
+
+    fun clearSelection() {
+        _selectedIds.value = emptySet()
+    }
+
+    fun deleteSelected() {
+        val ids = _selectedIds.value
+        if (ids.isEmpty()) return
+        val previousList = _conversations.value
+        val removedInOrder = previousList.filter { ids.contains(it.id) }
+        val otherUserIds = removedInOrder.map { it.otherUserId }
+
+        _conversations.update { list -> list.filterNot { ids.contains(it.id) } }
+        _selectedIds.value = emptySet()
+        _isSelectMode.value = false
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = msgRepo.hideConversations(otherUserIds)
+            if (result.isFailure) {
+                _conversations.update { current ->
+                    (current + removedInOrder.filterNot { r -> current.any { it.id == r.id } })
+                        .sortedByDescending { com.textsocial.app.util.TimeUtils.parseToEpochMillis(it.lastMessageTime) ?: 0L }
+                }
+                _actionError.value = "Gagal menghapus chat terpilih."
+            }
         }
     }
 }
@@ -916,6 +1048,20 @@ class NotificationViewModel : ViewModel() {
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError = _actionError.asStateFlow()
 
+    // Tab pemisah aktivitas: "all", "like", "comment", "mention", "follow"
+    private val _selectedFilter = MutableStateFlow("all")
+    val selectedFilter = _selectedFilter.asStateFlow()
+
+    val filteredNotifications: StateFlow<List<Notification>> = combine(
+        _notifications, _selectedFilter
+    ) { list, filter ->
+        if (filter == "all") list else list.filter { it.type == filter }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun selectFilter(filter: String) {
+        _selectedFilter.value = filter
+    }
+
     fun clearActionError() {
         _actionError.value = null
     }
@@ -1001,7 +1147,8 @@ class NotificationViewModel : ViewModel() {
     }
 
     fun selectAll() {
-        _selectedIds.value = _notifications.value.map { it.id }.toSet()
+        // Pilih semua sesuai tab yang sedang aktif, bukan seluruh notifikasi.
+        _selectedIds.value = filteredNotifications.value.map { it.id }.toSet()
     }
 
     fun clearSelection() {

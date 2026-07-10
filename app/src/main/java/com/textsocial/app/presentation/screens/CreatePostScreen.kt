@@ -39,12 +39,16 @@ fun CreatePostScreen(
     onNavigateToProfileMe: () -> Unit,
     showBottomBar: Boolean = true
 ) {
+    remember(Unit) { viewModel.resetComposerState() }
+
     val text by viewModel.text.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
     val isFinished by viewModel.isFinished.collectAsState()
+    val linkPreview by viewModel.linkPreview.collectAsState()
+    val isLoadingLinkPreview by viewModel.isLoadingLinkPreview.collectAsState()
 
-    val maxChars = 500
+    val maxChars = 3000
     val charsRemaining = maxChars - text.length
 
     var fieldValue by remember { mutableStateOf(TextFieldValue(text)) }
@@ -82,8 +86,8 @@ fun CreatePostScreen(
         if (atIndex == -1) return
         val before = fieldValue.text.substring(0, atIndex)
         val after = fieldValue.text.substring(cursor)
-        val newText = "$before@${user.username} $after"
-        val newCursorPos = before.length + user.username.length + 2
+        val newText = "$before@${user.username} $after".take(maxChars)
+        val newCursorPos = minOf(before.length + user.username.length + 2, maxChars)
         fieldValue = TextFieldValue(newText, TextRange(newCursorPos))
         viewModel.onTextChange(newText)
         mentionSuggestions = emptyList()
@@ -91,6 +95,9 @@ fun CreatePostScreen(
 
     LaunchedEffect(isFinished) {
         if (isFinished) {
+            fieldValue = TextFieldValue("")
+            mentionSuggestions = emptyList()
+            viewModel.resetComposerState()
             onNavigateBack()
         }
     }
@@ -153,9 +160,18 @@ fun CreatePostScreen(
 
                 TextField(
                     value = fieldValue,
-                    onValueChange = {
-                        fieldValue = it
-                        viewModel.onTextChange(it.text)
+                    onValueChange = { newValue ->
+                        val cappedValue = if (newValue.text.length > maxChars) {
+                            val truncatedText = newValue.text.take(maxChars)
+                            newValue.copy(
+                                text = truncatedText,
+                                selection = TextRange(minOf(newValue.selection.end, maxChars))
+                            )
+                        } else {
+                            newValue
+                        }
+                        fieldValue = cappedValue
+                        viewModel.onTextChange(cappedValue.text)
                     },
                     placeholder = { Text(stringResource(R.string.penjelasanpost_title)) },
                     modifier = Modifier
@@ -171,6 +187,26 @@ fun CreatePostScreen(
                     ),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp)
                 )
+
+                if (isLoadingLinkPreview) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Memuat pratinjau link…",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                } else if (linkPreview != null) {
+                    com.textsocial.app.presentation.components.LinkPreviewCard(
+                        preview = linkPreview!!,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                }
 
                 if (mentionSuggestions.isNotEmpty()) {
                     Surface(

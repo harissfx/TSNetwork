@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import android.content.Intent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -133,7 +135,7 @@ fun HomeScreen(
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.MailOutline, contentDescription = "Messages")
+                            Icon(Icons.Default.Chat, contentDescription = "Messages")
                         }
                     }
                 },
@@ -463,14 +465,37 @@ fun PostItem(
                 }
 
                 val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
-                if (post.userId == myId && onDeleteClick != null) {
-                    IconButton(onClick = onDeleteClick) {
+                val clipboardManager = LocalClipboardManager.current
+                var showPostMenu by remember { mutableStateOf(false) }
+
+                Box {
+                    IconButton(onClick = { showPostMenu = true }) {
                         Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete post",
-                            tint = MaterialTheme.colorScheme.error,
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Opsi lainnya",
+                            tint = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.size(20.dp)
                         )
+                    }
+                    DropdownMenu(expanded = showPostMenu, onDismissRequest = { showPostMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Salin teks") },
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(post.text))
+                                showPostMenu = false
+                            }
+                        )
+                        // Cuma pemilik post yang bisa hapus -- orang lain nggak mungkin ada opsi ini,
+                        // makanya hanya di-render kalau post.userId cocok sama user yang lagi login.
+                        if (post.userId == myId && onDeleteClick != null) {
+                            DropdownMenuItem(
+                                text = { Text("Hapus postingan", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    showPostMenu = false
+                                    onDeleteClick()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -485,6 +510,11 @@ fun PostItem(
                 onHashtagClick = onHashtagClick,
                 onMentionClick = onMentionClick
             )
+
+            post.linkPreview?.let { preview ->
+                Spacer(modifier = Modifier.height(8.dp))
+                com.textsocial.app.presentation.components.LinkPreviewCard(preview = preview)
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
             Row(
@@ -518,7 +548,7 @@ fun PostItem(
                         .padding(4.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.ChatBubbleOutline,
+                        imageVector = Icons.Default.ChatBubble,
                         contentDescription = "Comment icon",
                         tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(20.dp)
@@ -544,7 +574,7 @@ fun PostItem(
                     }
                 }) {
                     Icon(
-                        imageVector = Icons.Outlined.Share,
+                        imageVector = Icons.Default.Share,
                         contentDescription = "Share post",
                         tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(20.dp)

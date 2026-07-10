@@ -157,6 +157,23 @@ data class TrendingHashtagDto(
 )
 
 @JsonClass(generateAdapter = true)
+data class LinkPreviewRequest(
+    val url: String
+)
+
+// Dipakai untuk 2 sumber: response Edge Function `link-preview` (real-time saat mengetik)
+// dan baris cache dari tabel rest/v1/link_previews (batch saat load feed). Skemanya sama persis.
+@JsonClass(generateAdapter = true)
+data class LinkPreviewDto(
+    val url: String,
+    val title: String? = null,
+    val description: String? = null,
+    val image_url: String? = null,
+    val site_name: String? = null,
+    val fetch_failed: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
 data class RefreshTokenRequest(
     val refresh_token: String
 )
@@ -293,5 +310,20 @@ data class ConversationDto(
     val user2_id: String,
     val created_at: String,
     val updated_at: String,
+    val hidden_for_user1: Boolean = false,
+    val hidden_for_user2: Boolean = false,
     val messages: List<MessageDto> = emptyList()
+)
+
+
+// Kirim hanya satu kolom per request supaya tidak menimpa status hidden_for_userX
+// milik pihak lain di percakapan yang sama (lihat MessageRepositoryImpl.hideConversations).
+@JsonClass(generateAdapter = true)
+data class HideConversationForUser1Request(
+    val hidden_for_user1: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class HideConversationForUser2Request(
+    val hidden_for_user2: Boolean = true
 )

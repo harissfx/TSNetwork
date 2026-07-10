@@ -22,5 +22,6 @@ class FcmService : FirebaseMessagingService() {
         super.onMessageReceived(message)
         if (message.data.isEmpty()) return
         NotificationHelper.showFromPushData(applicationContext, message.data)
+        com.textsocial.app.util.NotificationEventBus.notifyPushReceived(message.data["type"] ?: "general")
     }
 }

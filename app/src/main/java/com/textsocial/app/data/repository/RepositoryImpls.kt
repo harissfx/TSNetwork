@@ -258,6 +258,12 @@ class PostRepositoryImpl(
                     likesResponse.body()?.map { it.post_id }?.toSet() ?: emptySet()
                 } else emptySet()
 
+                // Kumpulkan URL pertama dari tiap post (kalau ada), lalu ambil metadata OG-nya
+                // sekaligus dalam 1 request ke cache link_previews -- bukan 1 request per post,
+                // supaya nge-load feed tidak jadi lambat/boros.
+                val urlsByPostId = dtos.associate { it.id to com.textsocial.app.util.LinkUtils.extractFirstUrl(it.content) }
+                val previewsByUrl = fetchCachedLinkPreviews(urlsByPostId.values.filterNotNull().distinct())
+
                 val posts = dtos.map { dto ->
                     val senderUsername = dto.users?.username ?: "user"
                     Post(
@@ -272,7 +278,8 @@ class PostRepositoryImpl(
                         commentsCount = dto.comment_count,
                         isLiked = likedPostIds.contains(dto.id),
                         isVerified = dto.users?.is_verified ?: false,
-                        userAvatarUrl = dto.users?.avatar_url
+                        userAvatarUrl = dto.users?.avatar_url,
+                        linkPreview = urlsByPostId[dto.id]?.let { previewsByUrl[it] }
                     )
                 }
 
@@ -291,8 +298,8 @@ class PostRepositoryImpl(
     }
 
     override suspend fun createPost(text: String): Result<Unit> {
-        if (text.length > 500) {
-            return Result.failure(Exception("Post exceeds max 500 characters"))
+        if (text.length > 3000) {
+            return Result.failure(Exception("Post exceeds max 3000 characters"))
         }
 
         return try {
@@ -489,6 +496,49 @@ class PostRepositoryImpl(
             Result.failure(e)
         }
     }
+
+    // Dipanggil (debounced) dari form Buat Post. Ini yang memicu Edge Function untuk benar-benar
+    // fetch HTML situs tujuan & parse og:tag-nya -- hasilnya otomatis ikut ke-cache di tabel
+    // link_previews oleh Edge Function itu sendiri, jadi request dari getPosts() berikutnya
+    // untuk URL yang sama tinggal baca cache tanpa fetch ulang.
+    override suspend fun getLinkPreview(url: String): Result<LinkPreview?> {
+        return try {
+            val response = apiService.fetchLinkPreview(com.textsocial.app.data.model.LinkPreviewRequest(url))
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("Failed to fetch link preview: ${response.code()}"))
+            }
+            val dto = response.body()
+            Result.success(dto?.takeIf { !it.fetch_failed }?.toDomain())
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // Ambil metadata OG utk banyak URL sekaligus dari cache (bukan dari Edge Function), dipakai
+    // saat nge-load feed. Kalau gagal/kosong, cukup dianggap "belum ada preview" (bukan error
+    // fatal) -- feed tetap harus bisa tampil walau tabel link_previews kosong/bermasalah.
+    private suspend fun fetchCachedLinkPreviews(urls: List<String>): Map<String, LinkPreview> {
+        if (urls.isEmpty()) return emptyMap()
+        return try {
+            val filter = "in.(${urls.joinToString(",") { "\"$it\"" }})"
+            val response = apiService.getLinkPreviewsCached(urlInFilter = filter)
+            if (!response.isSuccessful) return emptyMap()
+            response.body()
+                ?.filterNot { it.fetch_failed }
+                ?.associate { it.url to it.toDomain() }
+                ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun com.textsocial.app.data.model.LinkPreviewDto.toDomain() = LinkPreview(
+        url = url,
+        title = title,
+        description = description,
+        imageUrl = image_url,
+        siteName = site_name
+    )
 }
 
 class StoryRepositoryImpl(
@@ -726,7 +776,11 @@ class MessageRepositoryImpl(
             val response = apiService.getConversations("(user1_id.eq.$myId,user2_id.eq.$myId)")
             if (response.isSuccessful && response.body() != null) {
                 val list = response.body()!!.mapNotNull { dto ->
-                    val otherUserId = if (dto.user1_id == myId) dto.user2_id else dto.user1_id
+                    val isMeUser1 = dto.user1_id == myId
+                    val hiddenForMe = if (isMeUser1) dto.hidden_for_user1 else dto.hidden_for_user2
+                    if (hiddenForMe) return@mapNotNull null
+
+                    val otherUserId = if (isMeUser1) dto.user2_id else dto.user1_id
                     val profileResponse = apiService.getProfile("eq.$otherUserId")
                     val otherProfile = if (profileResponse.isSuccessful) {
                         profileResponse.body()?.firstOrNull()
@@ -886,6 +940,40 @@ class MessageRepositoryImpl(
             } else {
                 Result.failure(Exception("Failed to delete message: ${response.code()}"))
             }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun hideConversation(otherUserId: String): Result<Unit> {
+        return hideConversations(listOf(otherUserId))
+    }
+
+    override suspend fun hideConversations(otherUserIds: List<String>): Result<Unit> {
+        if (otherUserIds.isEmpty()) return Result.success(Unit)
+        val myId = prefs.getUserId() ?: return Result.failure(Exception("Not logged in"))
+        return try {
+            // ID conversation diurutkan alfabetis ("user1Id_user2Id"), jadi posisi saya sebagai
+            // user1 atau user2 tergantung perbandingan string myId vs otherUserId, bukan tetap.
+            // Dikelompokkan dulu supaya paling banyak cuma 2 request PATCH walau yang dipilih banyak.
+            val idsWhereImUser1 = otherUserIds.filter { myId < it }.map { getConversationId(myId, it) }
+            val idsWhereImUser2 = otherUserIds.filter { myId >= it }.map { getConversationId(myId, it) }
+
+            if (idsWhereImUser1.isNotEmpty()) {
+                val filter = "in.(${idsWhereImUser1.joinToString(",")})"
+                val response = apiService.hideConversationsForUser1(filter)
+                if (!response.isSuccessful) {
+                    return Result.failure(Exception("Failed to hide conversation: ${response.code()}"))
+                }
+            }
+            if (idsWhereImUser2.isNotEmpty()) {
+                val filter = "in.(${idsWhereImUser2.joinToString(",")})"
+                val response = apiService.hideConversationsForUser2(filter)
+                if (!response.isSuccessful) {
+                    return Result.failure(Exception("Failed to hide conversation: ${response.code()}"))
+                }
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

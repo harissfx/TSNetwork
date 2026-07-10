@@ -68,7 +68,7 @@ object NotificationHelper {
         )
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(iconForType(type))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -80,5 +80,12 @@ object NotificationHelper {
         val manager = context.getSystemService(NotificationManager::class.java)
         val notifId = (data["sender_id"] ?: type).hashCode()
         manager?.notify(notifId, notification)
+    }
+
+    private fun iconForType(type: String): Int = when (type) {
+        "dm" -> R.drawable.ic_notification
+        "like" -> R.drawable.ic_notification_like
+        "comment" -> R.drawable.ic_notification_comment
+        else -> R.drawable.ic_notification_general
     }
 }

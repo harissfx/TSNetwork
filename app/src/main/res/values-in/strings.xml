@@ -115,6 +115,11 @@
     <string name="notif_started_following">mulai mengikutimu</string>
     <string name="notif_mentioned_you">menyebutmu di sebuah postingan</string>
     <string name="notif_generic">mengirimimu notifikasi</string>
+    <string name="notif_tab_all">Semua</string>
+    <string name="notif_tab_like">Suka</string>
+    <string name="notif_tab_comment">Komentar</string>
+    <string name="notif_tab_mention">Mention</string>
+    <string name="notif_tab_follow">Follow</string>
     <string name="no_view">Belum ada tayangan yang tercatat.</string>
     <string name="rpl_title">Balasan</string>
     <string name="rpl_postkos">Belum ada tanggapan. Mulai percakapan!</string>
@@ -133,6 +138,8 @@
     <string name="error_username_update_failed">Gagal mengubah username: %1$s</string>
     <string name="dm_kosong">Belum ada obrolan pribadi</string>
     <string name="dm_kosongdesc">Buka profil untuk mulai mengirim pesan</string>
+    <string name="dm_del_title">Hapus %1$s obrolan?</string>
+    <string name="dm_del_desc">Obrolan yang dipilih akan dihapus dari kotak masuk kamu. Lawan bicara masih bisa melihat percakapannya, dan obrolan ini akan muncul lagi kalau mereka mengirim pesan baru ke kamu.</string>
     <string name="feed_kosong">Belum ada postingan. Jadilah yang pertama membagikannya!</string>
     <string name="prof_kosong">Belum ada kiriman yang dibagikan oleh pengguna ini.</string>
     <string name="notification_channel_general_name">Notifikasi umum</string>

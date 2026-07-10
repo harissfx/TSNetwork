@@ -1,8 +1,10 @@
 package com.textsocial.app.presentation.screens
 
+import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -19,7 +21,10 @@ import androidx.compose.material.icons.filled.Reply
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import android.content.Intent
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,7 +59,7 @@ private sealed class CommentRowItem {
     data class Top(val comment: Comment) : CommentRowItem() {
         override val key get() = comment.id
     }
-    data class Reply(val comment: Comment, val replyToUsername: String) : CommentRowItem() {
+    data class Reply(val comment: Comment, val replyToUsername: String, val replyToUserId: String) : CommentRowItem() {
         override val key get() = comment.id
     }
     data class ShowMore(val rootId: String, val hiddenCount: Int) : CommentRowItem() {
@@ -93,7 +98,8 @@ private fun buildCommentRows(
         val visibleReplies = if (isExpanded || replies.size <= COLLAPSE_THRESHOLD) replies else replies.take(COLLAPSE_THRESHOLD)
         for (reply in visibleReplies) {
             val directParentUsername = byId[reply.parentId]?.username ?: top.username
-            rows += CommentRowItem.Reply(reply, directParentUsername)
+            val directParentUserId = byId[reply.parentId]?.userId ?: top.userId
+            rows += CommentRowItem.Reply(reply, directParentUsername, directParentUserId)
         }
         if (replies.size > COLLAPSE_THRESHOLD) {
             if (isExpanded) rows += CommentRowItem.ShowLess(top.id)
@@ -118,9 +124,14 @@ fun PostDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val replyingTo by viewModel.replyingTo.collectAsState()
     val actionError by viewModel.actionError.collectAsState()
+    val isPostDeleted by viewModel.isPostDeleted.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+
+    LaunchedEffect(isPostDeleted) {
+        if (isPostDeleted) onNavigateBack()
+    }
     val context = LocalContext.current
 
     var expandedRoots by remember { mutableStateOf(setOf<String>()) }
@@ -368,33 +379,77 @@ fun PostDetailScreen(
                                     .padding(horizontal = 14.dp, vertical = 12.dp)
                             ) {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable { onNavigateToProfile(currentPost.userId) }
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    UserAvatarComponent(
-                                        username = currentPost.username,
-                                        avatarColor = currentPost.userAvatarColor,
-                                        avatarUrl = currentPost.userAvatarUrl,
-                                        size = AvatarSize.MEDIUM
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.clickable { onNavigateToProfile(currentPost.userId) }
+                                    ) {
+                                        UserAvatarComponent(
+                                            username = currentPost.username,
+                                            avatarColor = currentPost.userAvatarColor,
+                                            avatarUrl = currentPost.userAvatarUrl,
+                                            size = AvatarSize.MEDIUM
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = currentPost.displayName ?: currentPost.username,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 16.sp
+                                                )
+                                                if (currentPost.isVerified) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    VerifiedBadge(size = 15.dp)
+                                                }
+                                            }
                                             Text(
-                                                text = currentPost.displayName ?: currentPost.username,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 16.sp
+                                                text = "@${currentPost.username}",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.outline
                                             )
-                                            if (currentPost.isVerified) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                VerifiedBadge(size = 15.dp)
+                                        }
+                                    }
+
+                                    val detailMyId = remember {
+                                        com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId()
+                                    }
+                                    val detailClipboardManager = LocalClipboardManager.current
+                                    var showDetailPostMenu by remember { mutableStateOf(false) }
+
+                                    Box {
+                                        IconButton(onClick = { showDetailPostMenu = true }) {
+                                            Icon(
+                                                imageVector = Icons.Default.MoreVert,
+                                                contentDescription = "Opsi lainnya",
+                                                tint = MaterialTheme.colorScheme.outline,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        DropdownMenu(
+                                            expanded = showDetailPostMenu,
+                                            onDismissRequest = { showDetailPostMenu = false }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = { Text("Salin teks") },
+                                                onClick = {
+                                                    detailClipboardManager.setText(AnnotatedString(currentPost.text))
+                                                    showDetailPostMenu = false
+                                                }
+                                            )
+                                            if (currentPost.userId == detailMyId) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Hapus postingan", color = MaterialTheme.colorScheme.error) },
+                                                    onClick = {
+                                                        showDetailPostMenu = false
+                                                        viewModel.deletePost()
+                                                    }
+                                                )
                                             }
                                         }
-                                        Text(
-                                            text = "@${currentPost.username}",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
                                     }
                                 }
 
@@ -515,6 +570,7 @@ fun PostDetailScreen(
                                     postOwnerId = post?.userId,
                                     isReply = false,
                                     replyToUsername = null,
+                                    replyToUserId = null,
                                     isHighlighted = row.comment.id == highlightedCommentId,
                                     onUserClick = onNavigateToProfile,
                                     onReplyClick = { viewModel.startReplyTo(row.comment) },
@@ -526,6 +582,7 @@ fun PostDetailScreen(
                                     postOwnerId = post?.userId,
                                     isReply = true,
                                     replyToUsername = row.replyToUsername,
+                                    replyToUserId = row.replyToUserId,
                                     isHighlighted = row.comment.id == highlightedCommentId,
                                     onUserClick = onNavigateToProfile,
                                     onReplyClick = {
@@ -562,12 +619,14 @@ fun PostDetailScreen(
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun CommentRow(
     comment: com.textsocial.app.domain.model.Comment,
     postOwnerId: String?,
     isReply: Boolean,
     replyToUsername: String?,
+    replyToUserId: String?,
     isHighlighted: Boolean,
     onUserClick: (String) -> Unit,
     onReplyClick: () -> Unit,
@@ -576,6 +635,7 @@ private fun CommentRow(
 ) {
     val myId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() }
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
     val startPadding = if (isReply) 48.dp else 16.dp
     val highlightColor by animateColorAsState(
@@ -637,13 +697,24 @@ private fun CommentRow(
         Spacer(modifier = Modifier.height(6.dp))
 
         if (isReply && replyToUsername != null) {
-            Text(
-                text = stringResource(R.string.reply_title, replyToUsername),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 42.dp, bottom = 2.dp)
-            )
+            Row(modifier = Modifier.padding(start = 42.dp, bottom = 2.dp)) {
+                Text(
+                    text = stringResource(R.string.reply_tit) + " ",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Text(
+                    text = "@$replyToUsername",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = if (replyToUserId != null) {
+                        Modifier.clickable { onUserClick(replyToUserId) }
+                    } else {
+                        Modifier
+                    }
+                )
+            }
         }
 
         LinkTextComponent(
@@ -658,6 +729,10 @@ private fun CommentRow(
                     val result = com.textsocial.app.di.ServiceLocator.userRepository.getProfileByUsername(username)
                     result.onSuccess { mentionedUser -> onUserClick(mentionedUser.id) }
                 }
+            },
+            onLongPress = {
+                clipboardManager.setText(AnnotatedString(comment.text))
+                Toast.makeText(context, "Teks komentar disalin", Toast.LENGTH_SHORT).show()
             }
         )
 

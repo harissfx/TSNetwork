@@ -24,6 +24,10 @@ interface PostRepository {
     suspend fun deleteComment(commentId: String): Result<Unit>
     suspend fun likeComment(commentId: String): Result<Unit>
     suspend fun unlikeComment(commentId: String): Result<Unit>
+
+    // Dipanggil real-time dari form Buat Post (debounced) saat link terdeteksi di teks yang
+    // sedang diketik. Return null kalau URL tidak punya metadata OG yang bisa diambil.
+    suspend fun getLinkPreview(url: String): Result<LinkPreview?>
 }
 
 interface StoryRepository {
@@ -45,6 +49,8 @@ interface MessageRepository {
     suspend fun sendMessage(otherUserId: String, text: String): Result<Unit>
     suspend fun markMessagesAsRead(otherUserId: String): Result<Unit>
     suspend fun deleteMessageForEveryone(otherUserId: String, messageId: String): Result<Unit>
+    suspend fun hideConversation(otherUserId: String): Result<Unit>
+    suspend fun hideConversations(otherUserIds: List<String>): Result<Unit>
     fun observeMessages(otherUserId: String): Flow<List<Message>>
 }
 

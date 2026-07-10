@@ -73,6 +73,7 @@ fun DMChatScreen(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     var messageForDeleteMenu by remember { mutableStateOf<String?>(null) }
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val chatRows = remember(messages) { buildChatRows(context, messages) }
 
@@ -243,45 +244,72 @@ fun DMChatScreen(
                                     modifier = Modifier
                                         .widthIn(max = 280.dp)
                                         .alpha(if (msg.isPending) 0.6f else 1f)
-                                        .combinedClickable(
-                                            onClick = {
+                                ) {
+                                    val bubbleTextColor = if (msg.isFailed) {
+                                        MaterialTheme.colorScheme.onErrorContainer
+                                    } else if (isMyMessage) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    }
+
+                                    if (msg.isDeleted) {
+                                        Text(
+                                            text = stringResource(R.string.pesan_dihapus),
+                                            color = bubbleTextColor,
+                                            fontSize = 14.sp,
+                                            fontStyle = FontStyle.Italic,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        )
+                                    } else {
+                                        com.textsocial.app.presentation.components.LinkTextComponent(
+                                            text = msg.text,
+                                            textColor = bubbleTextColor,
+                                            // Link dikasih warna sama kayak teks bubble-nya (cukup dibedain
+                                            // pakai garis bawah) -- soalnya warna bubble berubah-ubah
+                                            // (primary/secondaryContainer/errorContainer), jadi warna link
+                                            // "biru default" bisa nyaris nggak keliatan di bubble tertentu.
+                                            linkColor = bubbleTextColor,
+                                            style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            onTapFallback = {
                                                 if (msg.isFailed) viewModel.retryMessage(msg)
                                             },
-                                            onLongClick = {
+                                            onLongPress = {
                                                 if (msg.isFailed) {
                                                     messageForDeleteMenu = null
                                                     viewModel.discardFailedMessage(msg.id)
-                                                } else if (isMyMessage && !msg.isDeleted && !msg.isPending) {
+                                                } else if (!msg.isPending) {
+                                                    // Menu-nya berlaku buat pesan siapa aja (bukan cuma pesan
+                                                    // sendiri) karena sekarang isinya ada opsi "Salin pesan" yang
+                                                    // berlaku juga buat pesan dari lawan bicara. Opsi "Hapus" di
+                                                    // menu tetap cuma muncul kalau itu pesan sendiri.
                                                     messageForDeleteMenu = msg.id
                                                 }
                                             }
                                         )
-                                ) {
-                                    Text(
-                                        text = if (msg.isDeleted) stringResource(R.string.pesan_dihapus) else msg.text,
-                                        color = if (msg.isFailed) {
-                                            MaterialTheme.colorScheme.onErrorContainer
-                                        } else if (isMyMessage) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSecondaryContainer
-                                        },
-                                        fontSize = 14.sp,
-                                        fontStyle = if (msg.isDeleted) FontStyle.Italic else FontStyle.Normal,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                    )
+                                    }
                                 }
                                 DropdownMenu(
                                     expanded = messageForDeleteMenu == msg.id,
                                     onDismissRequest = { messageForDeleteMenu = null }
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.hapus_verif)) },
+                                        text = { Text("Salin pesan") },
                                         onClick = {
-                                            viewModel.deleteMessage(msg.id)
+                                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(msg.text))
                                             messageForDeleteMenu = null
                                         }
                                     )
+                                    if (isMyMessage) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.hapus_verif)) },
+                                            onClick = {
+                                                viewModel.deleteMessage(msg.id)
+                                                messageForDeleteMenu = null
+                                            }
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(2.dp))
