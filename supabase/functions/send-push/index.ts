@@ -19,8 +19,6 @@ const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT_JSON")!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 const serviceAccount: ServiceAccount = JSON.parse(serviceAccountJson);
 
-// ---- OAuth2 access token (JWT Bearer flow), cached in-memory per warm instance ----
-
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
 function base64UrlEncode(bytes: ArrayBuffer | Uint8Array): string {
@@ -90,12 +88,10 @@ async function getAccessToken(): Promise<string> {
   return cachedToken.value;
 }
 
-// ---- Building the notification content from the inserted row ----
-
 async function buildPushForNotificationRow(record: Record<string, unknown>) {
   const recipientId = record.recipient_id as string;
   const senderId = record.sender_id as string;
-  const type = record.type as string; // 'like' | 'comment' | 'follow' | 'mention'
+  const type = record.type as string;
 
   const { data: sender } = await supabase
     .from("profiles")
@@ -136,9 +132,6 @@ async function buildPushForMessageRow(record: Record<string, unknown>) {
   const conversationId = record.conversation_id as string;
   const senderId = record.sender_id as string;
   const content = record.content as string;
-
-  // conversation_id is formatted "user1Id_user2Id" (see README) -- the recipient
-  // is whichever half of that pair isn't the sender.
   const [uid1, uid2] = conversationId.split("_");
   const recipientId = uid1 === senderId ? uid2 : uid1;
 
@@ -162,8 +155,6 @@ async function buildPushForMessageRow(record: Record<string, unknown>) {
   };
 }
 
-// ---- Sending ----
-
 async function sendToToken(accessToken: string, token: string, title: string, body: string, data: Record<string, string>) {
   const response = await fetch(
     `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
@@ -176,9 +167,6 @@ async function sendToToken(accessToken: string, token: string, title: string, bo
       body: JSON.stringify({
         message: {
           token,
-          // Data-only message: no top-level "notification" block. This makes sure
-          // FcmService.onMessageReceived always runs on the client (see NotificationHelper),
-          // instead of the OS auto-displaying a notification we don't control/dedupe.
           data: { ...data, title, body },
           android: { priority: data.type === "dm" ? "high" : "normal" },
         },
@@ -188,8 +176,6 @@ async function sendToToken(accessToken: string, token: string, title: string, bo
 
   if (!response.ok) {
     const errorBody = await response.text();
-    // UNREGISTERED / invalid-argument usually means the token is stale (app uninstalled,
-    // token rotated) -- clean it up so we stop wasting sends on it.
     if (response.status === 404 || errorBody.includes("UNREGISTERED")) {
       await supabase.from("device_tokens").delete().eq("fcm_token", token);
     }
