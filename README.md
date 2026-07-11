@@ -8,47 +8,30 @@ Platform media sosial berbasis teks yang ringan, aman, dan mengutamakan privasi 
 
 - **Frontend:** Android Studio dengan Jetpack Compose (Kotlin), Material 3, Navigation Compose, Retrofit + Moshi (konversi JSON), Coil (loading gambar), dan `SharedPreferences`/`EncryptedSharedPreferences` untuk penyimpanan lokal (tema, bahasa, token JWT).
 - **Backend:** Supabase PostgreSQL Database, Supabase Auth (berbasis JWT), Supabase Realtime untuk pertukaran pesan instan (DM), dan Supabase Storage (bucket `avatars` untuk foto profil).
-- **Push Notification:** Firebase Cloud Messaging (FCM) + 1 Supabase Edge Function (`send-push`), dipicu lewat Database Webhook (lihat bagian 5).
-- **Keamanan:** RLS (Row Level Security) di semua tabel Supabase, trigger yang mencegah pengguna biasa mengubah status verifikasi (`is_verified`) miliknya sendiri, token JWT disimpan via `EncryptedSharedPreferences`, dan klien OkHttp dengan `usesCleartextTraffic="false"` (memaksa semua trafik lewat HTTPS).
+- **Push Notification:** Firebase Cloud Messaging (FCM) + Supabase Edge Function `send-push`, dipicu lewat Database Webhook (lihat bagian 5).
+- **Keamanan:** RLS di semua tabel Supabase, trigger `prevent_self_verification`, trigger rate limiting anti-spam untuk insert post/komentar/like (`enforce_rate_limit`, lihat bagian 1 & 4), token JWT disimpan via `EncryptedSharedPreferences`, dan klien OkHttp dengan `usesCleartextTraffic="false"`.
 
 ---
 
-## ⚙️ 0. KONFIGURASI PROYEK (WAJIB SEBELUM BUILD)
+## ⚙️ 0. KONFIGURASI PROYEK
 
-Kredensial Supabase **tidak di-hardcode** di kode Android -- diambil dari `BuildConfig.SUPABASE_URL`
-dan `BuildConfig.SUPABASE_ANON_KEY` (lihat `SupabaseClient.kt`), yang digenerate lewat
-[Secrets Gradle Plugin](https://github.com/google/secrets-gradle-plugin) dari sebuah file `.env`
-di root proyek (setara `app/build.gradle.kts` -> blok `secrets { propertiesFileName = ".env" }`).
-File ini **tidak disertakan di repo** (rahasia per-developer), jadi buat sendiri:
+Kredensial Supabase **tidak di-hardcode** — diambil dari `BuildConfig.SUPABASE_URL` dan `BuildConfig.SUPABASE_ANON_KEY` (lihat `SupabaseClient.kt`), digenerate oleh [Secrets Gradle Plugin](https://github.com/google/secrets-gradle-plugin) dari file `.env` di root proyek (`app/build.gradle.kts` → blok `secrets { propertiesFileName = ".env" }`). File `.env` tidak disertakan di repo — isinya:
 
-1. Buat file `.env` di root proyek (sejajar dengan `settings.gradle.kts`), isinya:
-   ```properties
-   SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
-   SUPABASE_ANON_KEY=isi-anon-public-key-dari-dashboard-supabase
-   ```
-   (Dashboard Supabase -> **Project Settings -> API** untuk mendapatkan kedua nilai ini.)
-2. Sinkronkan proyek dengan Gradle (Android Studio akan otomatis membaca `.env` lewat plugin secrets).
-3. Untuk push notification, `app/google-services.json` (kredensial Firebase) sudah termasuk di repo ini, jadi tidak perlu setup ulang kecuali kamu memakai project Firebase sendiri.
+```properties
+SUPABASE_URL=https://xxxxxxxxxxxx.supabase.co
+SUPABASE_ANON_KEY=isi-anon-public-key-dari-dashboard-supabase
+```
 
-> `local.properties` hanya berisi `sdk.dir` (lokasi Android SDK di komputer kamu) -- bukan tempat kredensial Supabase.
+Kedua nilai ada di Dashboard Supabase → **Project Settings → API**. `local.properties` cuma berisi `sdk.dir`, bukan tempat kredensial. Untuk push notification, `app/google-services.json` (kredensial Firebase) sudah termasuk di repo.
 
 ---
 
 ## 💾 1. SKEMA DATABASE & KEBIJAKAN SUPABASE (SQL LENGKAP)
 
 > [!WARNING]
-> **Kalau proyek Supabase kamu SUDAH PERNAH menjalankan skrip lengkap ini sebelumnya, JANGAN jalankan ulang seluruh skrip di bawah** — bagian atasnya berisi `drop table ... cascade` yang akan menghapus semua data yang sudah ada.
-> Repo ini **tidak menyertakan file migrasi terpisah** (tidak ada folder `supabase/migrations`) — skrip SQL di bawah adalah satu-satunya sumber skema database, didesain untuk setup dari nol di proyek Supabase yang masih kosong.
-> Kalau proyek Supabase kamu sudah jalan dan cuma perlu menyusulkan tabel/kolom yang belum ada (mis. `device_tokens`, `hidden_for_user1`/`hidden_for_user2`, `is_verified`, `hide_following_list`, kolom kustomisasi story), salin manual bagian `create table`/`alter table` yang relevan dari skrip di bawah, satu per satu, alih-alih menjalankan seluruh blok.
-> Untuk proyek yang **baru dibuat dari nol**, cukup jalankan seluruh skrip di bawah satu kali — semua fitur (device tokens, kustomisasi story, badge verifikasi, upload foto profil, privasi following, akun privat, hapus chat/pesan) sudah otomatis termasuk.
+> Skrip ini berisi `drop table ... cascade` — didesain untuk setup dari nol di project Supabase yang masih kosong. **Jangan dijalankan ulang di project yang sudah punya data**, karena akan menghapus semuanya. Untuk menyusulkan tabel/kolom yang belum ada ke project yang sudah jalan, salin manual bagian `create table`/`alter table` yang relevan saja.
 
-> [!IMPORTANT]
-> **CARA MENJALANKAN KODE DI SUPABASE:**
-> 1. Masuk ke dashboard [Supabase](https://supabase.com/).
-> 2. Pilih proyek Anda, lalu klik menu **SQL Editor** di panel sebelah kiri.
-> 3. Klik tombol **New Query** (atau tanda plus `+`) untuk membuka tab editor baru.
-> 4. Salin (copy) **seluruh isi blok kode SQL di bawah ini**, tempelkan (paste) ke editor tersebut.
-> 5. Klik tombol **Run** di bagian kanan bawah.
+Jalankan lewat **Dashboard Supabase → SQL Editor**.
 
 ```sql
 -- Mengaktifkan ekstensi UUID generator
@@ -56,6 +39,8 @@ create extension if not exists "uuid-ossp";
 
 -- Bersihkan tabel lama jika ada (agar skrip ini bisa dijalankan ulang tanpa error)
 drop trigger if exists on_auth_user_created on auth.users;
+drop table if exists public.app_versions cascade;
+drop table if exists public.link_previews cascade;
 drop table if exists public.device_tokens cascade;
 drop table if exists public.notifications cascade;
 drop table if exists public.messages cascade;
@@ -223,6 +208,25 @@ create table public.link_previews (
     fetched_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- 13. TABEL VERSI APLIKASI (APP_VERSIONS)
+-- Sumber kebenaran untuk fitur "cek update" -- app membandingkan BuildConfig.VERSION_CODE
+-- miliknya dengan baris platform='android' yang version_code-nya PALING BESAR di tabel ini.
+-- Diisi MANUAL oleh pemilik project tiap kali rilis baru (lewat Supabase Dashboard/SQL
+-- Editor), bukan lewat app -- lihat bagian 7. Insert baris baru ke tabel ini juga otomatis
+-- memicu broadcast push notification ke SEMUA device lewat Database Webhook (lihat bagian 5).
+create table public.app_versions (
+    id uuid default uuid_generate_v4() primary key,
+    platform text not null default 'android',
+    version_code integer not null,
+    version_name text not null,
+    release_notes text,
+    download_url text not null,
+    -- Kalau diisi (bukan null) dan version_code app di HP user < nilai ini, dialog update
+    -- jadi WAJIB (tidak bisa di-skip/dismiss). Biarkan null untuk update biasa (opsional).
+    min_supported_version_code integer,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
 
 -- INDEKS OPTIMALISASI KINERJA (PERFORMANCE INDEXES)
 create index idx_posts_created_at on public.posts(created_at desc);
@@ -233,6 +237,12 @@ create index idx_comments_post_id on public.comments(post_id);
 create index idx_comment_likes_comment_id on public.comment_likes(comment_id);
 create index idx_notifications_recipient_id on public.notifications(recipient_id);
 create index idx_device_tokens_user_id on public.device_tokens(user_id);
+create index idx_app_versions_platform_version_code on public.app_versions(platform, version_code desc);
+-- unique(follower_id, following_id) di tabel follows otomatis bikin index dengan
+-- follower_id di depan (dipakai getFollowing), TAPI TIDAK meng-cover query yang filter
+-- by following_id saja (dipakai getFollowers/checkFollowExists/getFollowersCount) --
+-- tanpa index ini, query itu full table scan begitu tabel follows membesar.
+create index idx_follows_following_id on public.follows(following_id);
 
 
 -- FUNGSI & TRIGGER DATABASE OTOMATIS (TRIGGERS)
@@ -431,6 +441,60 @@ create trigger enforce_verified_badge
 before update on public.profiles
 for each row execute function public.prevent_self_verification();
 
+-- 10. RATE LIMITING (ANTI-SPAM) DI LEVEL DATABASE untuk insert post/komentar/like.
+--     Client Android sudah punya cooldown ringan sebelum request dikirim (lihat RateLimiter.kt
+--     di kode aplikasi) supaya UI langsung kasih feedback tanpa nunggu round-trip -- tapi itu
+--     CUMA lapisan UX, gampang dilewati kalau request dikirim di luar app (mis. curl pakai
+--     token yang di-intercept, client custom, dsb). Trigger di bawah ini jalan di database,
+--     jadi berlaku untuk SEMUA jalur insert apa pun clientnya -- ini pertahanan yang
+--     sesungguhnya, RateLimiter.kt di app cuma UX tambahan di atasnya.
+--
+--     Fungsi generik, dipakai ulang di 3 tabel lewat argumen trigger (TG_ARGV): argumen
+--     pertama = jumlah maksimum insert yang diizinkan, argumen kedua = panjang window waktu.
+--     Threshold sengaja dibuat lebih longgar dari cooldown di client (yang menahan burst tap
+--     dalam hitungan detik) -- trigger ini jaring pengaman terhadap penyalahgunaan yang
+--     lebih gigih/otomatis dalam window yang lebih panjang, bukan menduplikasi cooldown UX.
+create or replace function public.enforce_rate_limit()
+returns trigger as $$
+declare
+    v_max_count int := TG_ARGV[0]::int;
+    v_window interval := TG_ARGV[1]::interval;
+    v_count int;
+begin
+    execute format(
+        'select count(*) from %I.%I where user_id = $1 and created_at > now() - $2',
+        TG_TABLE_SCHEMA, TG_TABLE_NAME
+    )
+    into v_count
+    using new.user_id, v_window;
+
+    if v_count >= v_max_count then
+        raise exception 'Rate limit terlampaui: maksimum % aksi per % pada %', v_max_count, v_window, TG_TABLE_NAME
+            using errcode = 'P0001';
+    end if;
+
+    return new;
+end;
+$$ language plpgsql security definer;
+
+-- Post: maks 5 post baru per menit per user.
+drop trigger if exists enforce_post_rate_limit on public.posts;
+create trigger enforce_post_rate_limit
+before insert on public.posts
+for each row execute function public.enforce_rate_limit(5, '1 minute');
+
+-- Komentar: maks 10 komentar baru per menit per user.
+drop trigger if exists enforce_comment_rate_limit on public.comments;
+create trigger enforce_comment_rate_limit
+before insert on public.comments
+for each row execute function public.enforce_rate_limit(10, '1 minute');
+
+-- Like: maks 60 like baru per menit per user (lebih longgar krn wajar dipicu scroll-scroll cepat).
+drop trigger if exists enforce_like_rate_limit on public.likes;
+create trigger enforce_like_rate_limit
+before insert on public.likes
+for each row execute function public.enforce_rate_limit(60, '1 minute');
+
 -- SINKRONISASI: Salin data pengguna yang sudah terlanjur mendaftar tetapi belum memiliki profil
 insert into public.profiles (id, username, email, display_name, avatar_color, bio, is_private)
 select 
@@ -461,6 +525,7 @@ alter table public.messages enable row level security;
 alter table public.notifications enable row level security;
 alter table public.device_tokens enable row level security;
 alter table public.link_previews enable row level security;
+alter table public.app_versions enable row level security;
 
 -- PROFIL: Semua orang bisa membaca profil; hanya pemilik yang bisa mengubah profil sendiri
 create policy "Allow public profile reading" on public.profiles for select using (true);
@@ -617,6 +682,14 @@ create policy "Allow deleting own device tokens" on public.device_tokens for del
 create policy "Anyone can read link previews" on public.link_previews for select
     using (true);
 
+-- APP_VERSIONS: boleh dibaca siapa saja (anon & authenticated) supaya popup cek update
+-- jalan sebelum/sesudah login. SENGAJA tidak ada policy insert/update/delete untuk
+-- anon/authenticated -- meski grant di bagian 8 di bawah bersifat luas (all tables),
+-- RLS di sini yang jadi penjaga sesungguhnya: baris baru HANYA bisa ditambahkan manual
+-- lewat Supabase Dashboard/SQL Editor (pakai koneksi yang bypass RLS), bukan dari app.
+create policy "Anyone can read app versions" on public.app_versions for select
+    using (true);
+
 -- 8. HAK AKSES (GRANTS)
 -- Memberikan hak akses tabel ke role API (anon dan authenticated)
 grant select on all tables in schema public to anon, authenticated;
@@ -676,6 +749,8 @@ using (
 
 ---
 
+---
+
 ## 📡 2. ENDPOINT REST API BACKEND
 
 Klien Retrofit (`SupabaseApiService.kt`) berkomunikasi dengan API Supabase lewat endpoint REST
@@ -684,21 +759,21 @@ bawah ini contoh representatif -- semua entitas (posts, stories, comments, comme
 follows, conversations, messages, notifications, device_tokens) punya pola CRUD yang serupa:
 
 - **Otentikasi (GoTrue):**
-    - `POST /auth/v1/signup` -- membuat kredensial pengguna baru
-    - `POST /auth/v1/token?grant_type=password` -- login, mengembalikan access & refresh token JWT
-    - `POST /auth/v1/token?grant_type=refresh_token` -- memperbarui access token yang kedaluwarsa
-    - `POST /auth/v1/recover` -- mengirim email lupa password
+  - `POST /auth/v1/signup` -- membuat kredensial pengguna baru
+  - `POST /auth/v1/token?grant_type=password` -- login, mengembalikan access & refresh token JWT
+  - `POST /auth/v1/token?grant_type=refresh_token` -- memperbarui access token yang kedaluwarsa
+  - `POST /auth/v1/recover` -- mengirim email lupa password
 - **Database (PostgREST):**
-    - `GET /rest/v1/posts` -- mengambil daftar postingan terbaru
-    - `POST /rest/v1/posts` -- membuat postingan baru (maks. 3000 karakter, ditegakkan lewat `check` constraint)
-    - `GET /rest/v1/profiles?username=eq.{username}` -- mengambil profil berdasarkan username
-    - `PATCH /rest/v1/profiles?id=eq.{id}` -- memperbarui bio, nama tampilan, `is_private`, `hide_following_list`, dll.
-    - `GET /rest/v1/messages?conversation_id=eq.{id}` -- mengambil riwayat pesan sebuah percakapan
-    - `POST /rest/v1/messages` -- mengirim pesan chat baru (trigger otomatis membuat baris `conversations` kalau belum ada)
-    - `PATCH /rest/v1/conversations?id=eq.{id}` -- menyembunyikan/"menghapus" chat dari daftar DM milik satu pengguna saja, lewat kolom `hidden_for_user1`/`hidden_for_user2`
-    - `POST /rest/v1/device_tokens?on_conflict=fcm_token` -- mendaftarkan/memperbarui token FCM device (upsert)
+  - `GET /rest/v1/posts` -- mengambil daftar postingan terbaru
+  - `POST /rest/v1/posts` -- membuat postingan baru (maks. 3000 karakter, ditegakkan lewat `check` constraint)
+  - `GET /rest/v1/profiles?username=eq.{username}` -- mengambil profil berdasarkan username
+  - `PATCH /rest/v1/profiles?id=eq.{id}` -- memperbarui bio, nama tampilan, `is_private`, `hide_following_list`, dll.
+  - `GET /rest/v1/messages?conversation_id=eq.{id}` -- mengambil riwayat pesan sebuah percakapan
+  - `POST /rest/v1/messages` -- mengirim pesan chat baru (trigger otomatis membuat baris `conversations` kalau belum ada)
+  - `PATCH /rest/v1/conversations?id=eq.{id}` -- menyembunyikan/"menghapus" chat dari daftar DM milik satu pengguna saja, lewat kolom `hidden_for_user1`/`hidden_for_user2`
+  - `POST /rest/v1/device_tokens?on_conflict=fcm_token` -- mendaftarkan/memperbarui token FCM device (upsert)
 - **Storage:**
-    - `POST /storage/v1/object/avatars/{user_id}/profile.jpg` -- mengunggah/mengganti foto profil
+  - `POST /storage/v1/object/avatars/{user_id}/profile.jpg` -- mengunggah/mengganti foto profil
 
 ---
 
@@ -738,7 +813,7 @@ com.textsocial.app/
 ├── ui/theme/                     # Color.kt, Theme.kt, Type.kt (tema Material 3, light/dark)
 │
 ├── util/                         # LocaleManager, ThemeManager (SharedPreferences: bahasa & tema),
-│                                  # NotificationHelper, PushNotificationManager, TimeUtils
+│                                  # NotificationHelper, PushNotificationManager, TimeUtils, RateLimiter
 │
 └── di/
     └── ServiceLocator.kt         # Container Dependency Injection (DI) manual/tanpa Hilt
@@ -748,272 +823,97 @@ com.textsocial.app/
 
 ## 🛡️ 4. FITUR KEAMANAN
 
-1. **Row Level Security (RLS):** Semua tabel Supabase mengaktifkan RLS dengan policy per-operasi (select/insert/update/delete), termasuk aturan visibilitas yang menghormati akun privat (`is_private`) dan privasi daftar following (`hide_following_list`) — lihat bagian 1 di atas.
-2. **Proteksi Badge Verifikasi:** Trigger `prevent_self_verification` mencegah pengguna mengubah `is_verified` miliknya sendiri lewat request API biasa; kolom ini hanya bisa diubah manual lewat SQL Editor/Table Editor Supabase.
-3. **Transport Security:** Klien OkHttp + `AndroidManifest` menonaktifkan lalu lintas teks biasa (`usesCleartextTraffic="false"`) untuk mewajibkan enkripsi HTTPS di semua request jaringan.
-4. **Encrypted Storage:** Token akses JWT & refresh token disimpan secara lokal menggunakan `EncryptedSharedPreferences` (AES-256) lewat `EncryptedPreferencesManager`, dengan fallback otomatis ke `SharedPreferences` biasa kalau enkripsi gagal diinisialisasi di device tertentu.
-5. **Storage Access Control:** Bucket `avatars` bersifat public-read, tapi upload/update/delete foto profil dibatasi lewat policy Supabase Storage supaya pengguna hanya bisa mengubah foto miliknya sendiri (folder `{user_id}/`).
+1. **Row Level Security (RLS):** semua tabel Supabase, policy per-operasi (select/insert/update/delete), termasuk visibilitas yang menghormati akun privat (`is_private`) & privasi following (`hide_following_list`) — lihat bagian 1.
+2. **Rate limiting anti-spam (DB-level):** trigger `enforce_rate_limit` (generik, dipakai di `posts`/`comments`/`likes` lewat argumen trigger) menolak insert kalau user melebihi batas — 5 post/menit, 10 komentar/menit, 60 like/menit. Ini pertahanan sesungguhnya, berlaku di jalur insert apa pun. `RateLimiter.kt` di sisi Android cuma cooldown UX (feedback instan sebelum request dikirim), bukan pengganti trigger ini.
+3. **Proteksi badge verifikasi:** trigger `prevent_self_verification` mencegah user mengubah `is_verified` miliknya sendiri lewat API biasa — kolom ini cuma bisa diubah manual lewat SQL Editor/Table Editor.
+4. **Transport security:** `usesCleartextTraffic="false"` mewajibkan HTTPS di semua request.
+5. **Encrypted storage:** token JWT disimpan via `EncryptedSharedPreferences` (AES-256) lewat `EncryptedPreferencesManager`, fallback ke `SharedPreferences` biasa kalau enkripsi gagal diinisialisasi.
+6. **Storage access control:** bucket `avatars` public-read, tapi upload/update/delete dibatasi lewat policy Storage supaya user cuma bisa ubah foto miliknya sendiri (folder `{user_id}/`).
 
 ---
 
-## 🔔 5. PUSH NOTIFICATION (FCM) -- NOTIFIKASI SAAT APLIKASI TERTUTUP
+## 🔔 5. PUSH NOTIFICATION (FCM)
 
-> ✅ **Status: sudah terpasang & terkonfirmasi jalan** (like/comment/follow/DM memicu
-> notifikasi di system tray walau aplikasi tertutup total).
+Notifikasi sistem (like, komentar, follow, DM) muncul walau aplikasi tertutup total, lewat **Firebase Cloud Messaging**.
 
-Aplikasi bisa menampilkan notifikasi sistem (like, komentar, follow, DM baru) walaupun
-aplikasi sedang tertutup/di-kill, memakai **Firebase Cloud Messaging (FCM)**.
+**Sisi Android (sudah otomatis jalan):** `push/FcmService.kt` (terima & tampilkan push lewat `NotificationHelper`), `PushNotificationManager` (daftar/hapus FCM token ke tabel `device_tokens`, dipanggil setelah login/register/logout), `MainActivity` (minta izin notifikasi + deep link saat notifikasi di-tap).
 
-### Yang sudah otomatis jalan di sisi Android (client)
-- `app/google-services.json` -- kredensial project Firebase, sudah terpasang.
-- `com.textsocial.app.push.FcmService` -- menerima push & menampilkannya lewat `NotificationHelper`.
-- `PushNotificationManager` -- mendaftarkan/menghapus FCM token device ke tabel `device_tokens`, dipanggil otomatis setelah login/register berhasil, saat app dibuka dalam keadaan sudah login, dan saat logout.
-- `MainActivity` -- minta izin notifikasi (Android 13+) dan membuka layar yang relevan saat notifikasi di-tap (deep link ke post/profil/DM terkait).
+**Sisi Supabase (perlu disiapkan manual):**
+- Tabel `device_tokens` — sudah ada di skrip bagian 1.
+- Service account Firebase: Firebase Console → Project Settings → Service Accounts → Generate new private key (JANGAN masuk repo, beda dari `google-services.json`).
+- Deploy Edge Function `supabase/functions/send-push/index.ts`:
+  ```bash
+  supabase link --project-ref <project-id>
+  supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat path/ke/service-account.json)"
+  supabase functions deploy send-push --no-verify-jwt
+  ```
+  `--no-verify-jwt` karena yang memanggil adalah Database Webhook internal, bukan client dengan JWT user.
+- Database Webhook (Dashboard → Integrations → Database Webhooks), 3 buah, semuanya arahkan ke Edge Function `send-push` (schema `public`, bukan `realtime`):
 
-### Yang HARUS kamu siapkan sendiri di sisi Supabase (backend)
-Bagian client hanya bisa *menerima & menampilkan* push. Yang *mengirim* push (begitu ada
-row baru di tabel `notifications`/`messages`) ada di Supabase, lewat sebuah Edge Function.
+  | Name | Table | Events |
+      |---|---|---|
+  | `notify_on_notification` | `notifications` | Insert |
+  | `notify_on_message` | `messages` | Insert |
+  | `notify_on_app_version` | `app_versions` | Insert |
 
-**1. Pastikan tabel `device_tokens` sudah ada**
-Tabel ini sudah termasuk di skrip SQL lengkap pada bagian 1. Kalau proyek Supabase kamu
-sudah jalan lebih dulu sebelum fitur push ini ditambahkan, salin manual bagian
-`create table public.device_tokens` beserta index, trigger `on_device_token_updated`,
-policy RLS, dan `grant`-nya (lihat bagian 1) lalu jalankan sekali di SQL Editor -- tidak
-menyentuh tabel lain yang sudah berisi data.
-
-**2. Siapkan service account Firebase**
-- Firebase Console -> ⚙️ Project Settings -> **Service Accounts** -> **Generate new private key**
-- Ini men-download file JSON rahasia (JANGAN dimasukkan ke repo/APK, ini beda dari `google-services.json`)
-
-**3. Deploy Edge Function `send-push`**
-Kodenya ada di `supabase/functions/send-push/index.ts`. Dari terminal, di root proyek:
-```bash
-supabase login
-supabase link --project-ref <project-id-kamu>   # lihat di project_info.project_id pada google-services.json
-supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat path/ke/service-account.json)"
-supabase functions deploy send-push --no-verify-jwt
-```
-`--no-verify-jwt` dipakai karena yang memanggil function ini adalah Database Webhook
-internal Supabase, bukan client dengan JWT user.
-
-> Kalau deploy lewat **Dashboard -> Edge Functions -> Deploy a new function -> Via Editor**
-> (tanpa CLI), Supabase kadang otomatis kasih nama slug sendiri ke function-nya (misal
-> `dynamic-handler`) alih-alih `send-push`. Itu tidak masalah -- namanya bebas, yang penting
-> pas bikin Database Webhook di langkah 4, Edge Function yang dipilih di dropdown itu yang
-> benar (cek dulu di tab **Overview** function-nya buat lihat nama & URL aslinya).
-
-**4. Buat Database Webhook**
-Menunya ada di Dashboard Supabase -> **Integrations** -> **Database Webhooks** (bukan di
-bawah menu "Database" langsung -- di beberapa versi dashboard menunya disembunyikan di situ).
-Bisa juga langsung lewat URL `https://supabase.com/dashboard/project/<project-ref>/integrations/webhooks/webhooks`.
-Klik **Create a new hook**, buat 2 buah:
-| Name | Table | Events | Type | URL |
-|---|---|---|---|---|
-| `notify_on_notification` | `notifications` | Insert | Supabase Edge Functions | `send-push` |
-| `notify_on_message` | `messages` | Insert | Supabase Edge Functions | `send-push` |
-
-> ⚠️ Pas milih tabel di form pembuatan webhook, pastikan yang dipilih tabel `messages` di
-> **schema `public`** (tabel asli aplikasi ini). Supabase juga punya tabel-tabel lain bernama
-> mirip di **schema `realtime`** (dipakai fitur Realtime bawaan Supabase, bukan bagian dari
-> aplikasi ini) -- kalau salah pilih ke situ, webhook-nya nggak akan pernah kepicu oleh DM
-> yang beneran dikirim lewat aplikasi.
-
-Setelah ini aktif, tiap ada like/komentar/follow baru (insert ke `notifications`) atau
-pesan DM baru (insert ke `messages`), Supabase otomatis memanggil `send-push`, yang lalu
-mengambil `device_tokens` milik penerima dan mengirim push lewat FCM.
-
-### Kontrak payload push (dipakai bareng oleh Edge Function & client Android)
-Field `data` yang dikirim ke device lewat FCM, dan dibaca oleh `NotificationHelper` +
-`MainActivity` untuk deep link:
+**Kontrak payload push** (field `data` FCM, dibaca `NotificationHelper` + `MainActivity` untuk deep link):
 
 | Key | Isi |
 |---|---|
-| `type` | `like` \| `comment` \| `follow` \| `mention` \| `dm` |
+| `type` | `like` \| `comment` \| `follow` \| `mention` \| `dm` \| `app_update` |
 | `title` / `body` | Teks notifikasi |
-| `post_id` | ID postingan terkait (kosong kalau tidak relevan) |
-| `comment_id` | ID komentar terkait (kosong kalau tidak relevan) |
-| `sender_id` | ID pengguna yang memicu notifikasi/pengirim DM |
-| `sender_username` | Username pengirim (dipakai buat judul layar DM) |
+| `post_id` / `comment_id` | ID terkait (kosong kalau tidak relevan) |
+| `sender_id` / `sender_username` | Pemicu notifikasi / pengirim DM |
+| `download_url` | Hanya untuk `type=app_update` — link APK, dibuka browser saat notifikasi di-tap |
 
-### Uji coba
-Karena butuh 2 pihak (pengirim aktivitas + penerima notifikasi), paling gampang dites
-dengan **1 device aja** lewat SQL Editor -- gak perlu 2 HP:
+**Debugging cepat:** cek tab **Invocations** (bukan Logs) di Edge Function dulu — kosong berarti webhook belum aktif/salah tabel; status 500 biasanya `permission denied` karena `service_role` butuh `grant` eksplisit ke tabel terkait (sudah termasuk di skrip bagian 1); response 200 dengan `"no device tokens"` berarti user itu belum register token (logout-login ulang).
 
-1. Tutup total app di HP (swipe dari recent apps, bukan cuma minimize).
-2. Cari `user_id` sendiri: `select id from profiles where username = 'username_kamu';`
-3. Jalankan insert manual (boleh pakai `user_id` yang sama buat `recipient_id` dan `sender_id`, notif ke diri sendiri gapapa buat tes):
+---
+
+## 🔄 7. CEK UPDATE APLIKASI (IN-APP UPDATE POPUP)
+
+Karena app didistribusikan lewat sideload (bukan Play Store), tidak ada auto-update diam-diam —
+sebagai gantinya, app cek tabel `app_versions` tiap kali dibuka dan menampilkan dialog kalau ada
+versi lebih baru. User tetap yang menyelesaikan instalasi APK secara manual lewat browser.
+
+**Alur:** app dibuka → `AppUpdateViewModel` panggil `GET rest/v1/app_versions?platform=eq.android&order=version_code.desc&limit=1`
+→ dibandingkan dengan `BuildConfig.VERSION_CODE` → kalau lebih baru, tampilkan `UpdateDialog` di atas
+layar Home/Login (dipasang di level `AppNavGraph`, bukan di satu screen tertentu) → tombol "Update"
+membuka `download_url` lewat browser (`Intent.ACTION_VIEW`), tombol "Nanti" menyimpan version_code
+yang di-dismiss ke `EncryptedPreferencesManager` supaya tidak nongol lagi untuk versi yang sama.
+
+Kalau `min_supported_version_code` diisi dan lebih besar dari versi app saat ini, dialog jadi **wajib**
+(tidak ada tombol "Nanti", tidak bisa ditutup dengan tap di luar dialog).
+
+**Cara merilis versi baru:**
+1. Upload APK ke hosting pilihan kamu (GitHub Releases, Google Drive, MediaFire, dll — bebas, yang
+   penting linknya bisa dibuka langsung lewat browser).
+2. Insert 1 baris baru ke `app_versions` lewat Supabase Dashboard/SQL Editor, contoh:
    ```sql
-   insert into notifications (recipient_id, sender_id, type)
-   values ('<user_id>', '<user_id>', 'follow');
+   insert into public.app_versions (platform, version_code, version_name, release_notes, download_url)
+   values ('android', 2, '1.1.0', 'Perbaikan bug & fitur baru', 'https://contoh.com/link-apk-kamu');
    ```
-4. Notifikasi harus muncul di system tray dalam beberapa detik. Tap notifikasinya harus langsung membuka profil terkait.
+3. Insert ini otomatis memicu webhook `notify_on_app_version` → semua device yang punya token
+   terdaftar di `device_tokens` menerima push notification broadcast soal update baru (lihat bagian 5).
 
-Kalau mau tes DM juga:
-```sql
-insert into messages (conversation_id, sender_id, content)
-values ('<user_id>_<user_id>', '<user_id>', 'Tes pesan DM');
-```
+**Sisi Android:** `AppUpdateRepository`/`AppUpdateRepositoryImpl` (bandingkan versi & simpan status
+dismiss), `AppUpdateViewModel` (dipanggil dari `AppNavGraph`), `UpdateDialog.kt` (composable dialog-nya).
 
-### Debugging kalau notifikasi tidak muncul
-Urutan pengecekan paling efektif, dari yang paling gampang dicek:
-
-1. **Cek tab "Invocations" di Edge Function** (Dashboard -> Edge Functions -> function-nya
-   -> tab **Invocations**), BUKAN tab "Logs" -- funsgi ini cuma menulis ke Logs kalau ada
-   `console.log`/`console.error`, jadi kalau tidak ada entry di Logs itu belum tentu berarti
-   function tidak ke-invoke. Tab Invocations mencatat semua request HTTP yang masuk apa adanya.
-    - Tidak ada entry sama sekali di sekitar waktu tes -> Database Webhook belum aktif/salah
-      setting. Cek Dashboard -> Integrations -> Database Webhooks -> pastikan tabel dan Edge
-      Function yang dipilih sudah benar (dan schema-nya `public`, bukan `realtime`).
-    - Ada entry tapi statusnya 500 -> baca detail error di tab **Logs**, biasanya salah satu dari dua ini:
-2. **Error: `permission denied for table device_tokens` / mengarah ke `GRANT ... TO service_role`.**
-   Ini terjadi karena `service_role` (dipakai Edge Function) butuh GRANT eksplisit ke tabel
-   `device_tokens`, terpisah dari RLS policy. Perbaikannya:
-   ```sql
-   grant select, insert, update, delete on public.device_tokens to service_role;
-   ```
-   (skrip SQL lengkap di bagian 1 sudah menyertakan baris `grant` ini untuk deploy baru.)
-3. **Notifikasi muncul tapi judulnya "Seseorang" / isi pesan generik, bukan nama pengirim asli.**
-   Sama akar masalahnya seperti poin 2, tapi di tabel `profiles`: `service_role` gagal baca
-   nama pengirim, jadi Edge Function jatuh ke teks fallback. Perbaikannya:
-   ```sql
-   grant select on all tables in schema public to service_role;
-   ```
-4. **Response `"no device tokens for recipient"` (status 200, bukan error).**
-   Berarti pipeline-nya jalan normal, tapi `device_tokens` kosong untuk user itu. Cek:
-   ```sql
-   select * from device_tokens where user_id = '<user_id>';
-   ```
-   Kalau kosong, logout-login ulang di HP (token FCM didaftarkan lewat `PushNotificationManager`
-   yang dipanggil setelah login sukses / saat app dibuka dalam keadaan sudah login).
-5. **Semua di atas sukses (log sampai `FCM send OK...`) tapi tetap tidak ada notifikasi di HP.**
-   Kemungkinan di sisi Android: izin notifikasi belum di-allow (Settings HP -> Apps -> nama
-   app -> Notifications), atau battery optimization vendor (Xiaomi/Oppo/Vivo, dll) yang
-   agresif membunuh proses background sehingga push FCM tidak sampai ke `FcmService`.
-6. **Tadinya sudah jalan, tapi tiba-tiba berhenti total (Invocations kosong lagi) setelah
-   menjalankan ulang skrip SQL.** Kalau skrip yang dijalankan mengandung `drop table ...
-   cascade` untuk `notifications`/`messages` (skrip SQL lengkap di bagian 1 memang begitu --
-   didesain untuk setup dari nol, bukan untuk di-run ulang di project yang sudah jalan),
-   Database Webhook yang nempel ke tabel itu **ikut putus** waktu tabelnya di-drop dan
-   dibuat ulang, walau di dashboard webhook-nya masih kelihatan "ada". Perbaikannya: hapus
-   webhook lama itu di **Integrations -> Database Webhooks**, lalu buat ulang dari awal
-   (lihat langkah 4 di atas). Ke depannya, untuk sekadar menambah/mengubah sesuatu di
-   project yang sudah jalan, jalankan hanya potongan `create table`/`alter table` yang
-   relevan (bukan seluruh skrip di bagian 1), supaya `drop table ... cascade`-nya tidak
-   ikut menghapus data dan memutus webhook yang sudah aktif.
+---
 
 ## 🔗 6. LINK PREVIEW (OG PREVIEW) SAAT POSTING LINK
 
-Saat user mengetik link di form Buat Post, atau saat feed menampilkan post yang mengandung
-link, aplikasi menampilkan card kecil berisi judul/deskripsi/gambar dari halaman tujuan
-(mirip preview link di WhatsApp). Data ini diambil dari meta tag Open Graph (`og:title`,
-`og:description`, `og:image`) milik situs tujuan.
+Saat user mengetik link, app menampilkan card judul/deskripsi/gambar dari meta tag Open Graph tujuan (mirip preview link WhatsApp).
 
-### Alur singkatnya
-1. User mengetik/menempel link di form Buat Post.
-2. Setelah user berhenti mengetik ~600ms (debounce), app memanggil Edge Function
-   `link-preview` lewat `SupabaseApiService.fetchLinkPreview`.
-3. Edge Function fetch HTML situs tujuan (server-side, bukan dari HP user), parse meta tag
-   OG-nya, lalu **cache** hasilnya ke tabel `link_previews` (lihat bagian 1) supaya post lain
-   yang berisi link sama tidak perlu fetch ulang.
-4. Card preview muncul di form Buat Post (real-time) dan di feed Home (dibaca dari cache,
-   bukan fetch baru) untuk post yang sudah tersimpan.
+**Alur:** user ketik link → debounce ~600ms → `SupabaseApiService.fetchLinkPreview` panggil Edge Function `link-preview` → Edge Function fetch HTML server-side, parse OG tags, cache ke tabel `link_previews` → card muncul di form Buat Post (real-time) dan di feed (dari cache). Gambar preview tidak disimpan ke Storage — Android load `image_url` langsung dari situs asal pakai Coil.
 
-Catatan penting soal beban server: yang mahal adalah langkah fetch+parse HTML di langkah 2,
-dan itu **hanya terjadi sekali per URL unik** (berkat cache di langkah 3) -- render feed di
-langkah 4 cuma query biasa ke tabel Postgres, seringan query lain di app ini. Gambar preview
-sendiri **tidak** disimpan ke Supabase Storage; Android cukup me-load `image_url` langsung
-dari server situs tujuan pakai Coil (persis seperti me-load avatar dari URL eksternal),
-jadi tidak menambah pemakaian bucket Storage sama sekali.
+**Sisi Supabase (perlu disiapkan manual):**
+- Tabel `link_previews` — sudah ada di skrip bagian 1 (termasuk grant `select` eksplisit ke `service_role`, wajib karena UPSERT butuh SELECT juga untuk cek row yang sudah ada).
+- Deploy Edge Function `supabase/functions/link-preview/index.ts` **dengan** Verify JWT aktif (beda dari `send-push`) — yang memanggilnya client dengan JWT user asli, bukan webhook internal:
+  ```bash
+  supabase functions deploy link-preview
+  ```
 
-### Yang HARUS kamu siapkan sendiri di sisi Supabase (backend)
+**Keamanan di Edge Function:** cache-first (URL yang sudah di-fetch dalam 3 hari tidak di-fetch ulang), guard SSRF dasar (menolak `localhost`/IP private/metadata endpoint cloud, termasuk DNS rebinding), timeout 6 detik + baca maks ~300KB pertama, dan cache cuma ditulis oleh `service_role` (client cuma bisa baca).
 
-**1. Pastikan tabel `link_previews` sudah ada**
-Sudah termasuk di skrip SQL lengkap pada bagian 1. Kalau proyek Supabase kamu sudah jalan
-lebih dulu (paling umum: nambahin fitur ini ke project yang sudah live), jalankan SQL
-mandiri ini sekali di SQL Editor -- sudah termasuk semua grant yang dibutuhkan, jadi tidak
-bergantung ke urutan skrip section 1:
-
-```sql
-create table public.link_previews (
-    url text primary key,
-    title text,
-    description text,
-    image_url text,
-    site_name text,
-    fetch_failed boolean not null default false,
-    fetched_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-alter table public.link_previews enable row level security;
-
-create policy "Anyone can read link previews" on public.link_previews for select
-    using (true);
-
-grant select, insert, update on public.link_previews to service_role;
-grant select on public.link_previews to anon, authenticated;
-```
-
-> **Kenapa perlu `grant select` eksplisit, bukan cuma insert/update?** Kalau kamu jalankan
-> ini sebagai skrip tambahan setelah setup awal project (bukan dari skrip lengkap section 1
-> dari nol), grant lama seperti `grant select on all tables in schema public to ...` **tidak**
-> otomatis berlaku ke tabel baru ini -- perintah itu cuma berlaku ke tabel yang sudah ada
-> pada saat dijalankan. Tanpa `select` eksplisit di atas, UPSERT dari Edge Function bakal
-> gagal **diam-diam tanpa error yang jelas** (karena UPSERT butuh SELECT juga buat ngecek row
-> yang sudah ada), dan cache-nya nggak pernah kesimpen walau Edge Function tetap balikin
-> respons sukses ke app.
-
-**2. Deploy Edge Function `link-preview`**
-Kodenya ada di `supabase/functions/link-preview/index.ts`. Ada 2 cara:
-
-*Cara A -- lewat Dashboard (tanpa terminal):* Dashboard -> **Edge Functions** -> **Deploy a
-new function** -> pilih **Via Editor** -> nama function-nya `link-preview` -> hapus isi
-default di editor, ganti dengan isi `index.ts` -> pastikan toggle **Verify JWT** aktif -> klik
-**Deploy**. Kalau nanti ada update kode, tinggal buka lagi function `link-preview` di
-Dashboard, edit isinya, dan deploy ulang -- tidak perlu bikin function baru.
-
-*Cara B -- lewat CLI:*
-```bash
-supabase login
-supabase link --project-ref <project-id-kamu>
-supabase functions deploy link-preview
-```
-
-Beda dari `send-push`, function ini **JANGAN** dipakai `--no-verify-jwt` -- yang memanggilnya
-adalah client Android dengan JWT user asli (lewat header `Authorization` yang sudah otomatis
-disisipkan `SupabaseClient.kt`), bukan Database Webhook internal. Dengan verifikasi JWT aktif
-(default), hanya pengguna yang sudah login di aplikasi yang bisa memicu fetch, mencegah orang
-luar menyalahgunakan Edge Function ini buat fetch URL sembarangan.
-
-### Keamanan yang sudah dijaga di Edge Function ini
-- **Cache-first:** URL yang sudah pernah di-fetch (berhasil, dalam 3 hari terakhir) tidak
-  di-fetch ulang -- cukup baca dari tabel `link_previews`.
-- **Guard SSRF dasar:** menolak fetch ke `localhost`, IP loopback/private
-  (`127.x`, `10.x`, `172.16-31.x`, `192.168.x`, termasuk `169.254.169.254` yang sering
-  dipakai buat endpoint metadata cloud), dan mencoba resolve DNS hostname-nya juga supaya
-  domain yang di-*rebind* ke IP internal tetap ketolak.
-- **Batas waktu & ukuran:** fetch dibatasi timeout 6 detik dan hanya membaca ~300KB pertama
-  dari response (cukup untuk `<head>`, tidak perlu download seluruh halaman).
-- **Cache ditulis oleh `service_role`, bukan client:** client hanya bisa **membaca** tabel
-  `link_previews` (lihat policy RLS di bagian 1) -- tidak bisa menyuntik judul/gambar palsu
-  langsung ke database.
-
-### Debugging kalau card preview tidak muncul
-1. Cek tab **Invocations** di Dashboard -> Edge Functions -> `link-preview` -- ada request
-   masuk atau tidak saat kamu mengetik link di form Buat Post.
-2. Kalau responsnya 401 -- pastikan function di-deploy **tanpa** `--no-verify-jwt` (lihat
-   langkah 2 di atas) dan HP dalam keadaan sudah login.
-3. Kalau `fetch_failed: true` di response -- situs tujuannya kemungkinan tidak punya meta tag
-   Open Graph sama sekali, memblokir bot/user-agent tidak dikenal, atau responsnya bukan
-   `text/html` (mis. langsung file PDF/gambar). Ini bukan bug, memang situs tujuannya tidak
-   menyediakan metadata untuk di-preview.
-4. Kalau mau paksa refresh cache untuk 1 URL tertentu (misal buat testing), hapus baris-nya
-   manual: `delete from link_previews where url = '<url-nya>';`
-5. **Kartu preview muncul di form Buat Post tapi TIDAK muncul lagi di feed setelah di-post**
-   -- ini bukan gagal fetch (soalnya di form aja udah kebukti berhasil), tapi cache-nya nggak
-   pernah kesimpen ke tabel `link_previews`. Cek dengan `select * from link_previews;` -- kalau
-   kosong padahal udah sering coba post link, hampir pasti karena `service_role` belum punya
-   hak `select` di tabel ini (lihat kotak catatan di langkah 1) -- upsert dari Edge Function
-   butuh SELECT juga buat ngecek row yang sudah ada, dan kalau nggak ada, gagalnya diam-diam
-   tanpa error yang jelas balik ke app. Jalankan
-   `grant select on public.link_previews to service_role, anon, authenticated;` buat
-   ngebenerin ini.
+**Debugging cepat:** cek tab Invocations Edge Function; 401 berarti JWT verify gagal (pastikan tidak pakai `--no-verify-jwt`); `fetch_failed: true` berarti situs tujuan memang tidak punya meta OG; card muncul di form tapi hilang di feed biasanya karena `service_role` belum punya `grant select` di `link_previews`.
