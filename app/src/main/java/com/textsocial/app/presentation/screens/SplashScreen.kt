@@ -1,6 +1,5 @@
 package com.textsocial.app.presentation.screens
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -10,15 +9,18 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -163,36 +165,62 @@ fun SplashScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.graphicsLayer { alpha = loaderAlpha }
             ) {
-                PulsingDot(delayMillis = 0)
-                PulsingDot(delayMillis = 150)
-                PulsingDot(delayMillis = 300)
+                BrandSpinner()
             }
         }
     }
 }
 
 @Composable
-private fun PulsingDot(delayMillis: Int) {
-    val infiniteTransition = rememberInfiniteTransition(label = "dot_pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
+private fun BrandSpinner(size: androidx.compose.ui.unit.Dp = 32.dp, strokeWidth: androidx.compose.ui.unit.Dp = 3.dp) {
+    // Spinner lingkaran yang berputar terus-menerus, mirip loading indicator
+    // di Instagram/Facebook/WhatsApp -- dipakai infiniteTransition bawaan
+    // Compose (bukan animasi manual per-frame) supaya animasinya reliable
+    // dan tidak "macet"/berhenti seperti masalah di dot animation sebelumnya.
+    val infiniteTransition = rememberInfiniteTransition(label = "spinner_rotation")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 600, delayMillis = delayMillis, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
         ),
-        label = "dot_scale"
+        label = "spinner_rotation_value"
     )
-    Box(
+
+    Canvas(
         modifier = Modifier
-            .size(10.dp)
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .background(
-                brush = Brush.horizontalGradient(listOf(BrandVioletLight, BrandBlue, BrandCyanSoft)),
-                shape = CircleShape
-            )
-    )
+            .size(size)
+            .graphicsLayer { rotationZ = rotation }
+    ) {
+        val strokePx = strokeWidth.toPx()
+        // Lingkaran (bounding box) untuk drawArc secara default persis menyentuh
+        // ke-4 tepi Canvas (atas/bawah/kiri/kanan). Karena Stroke digambar rata
+        // tengah pada garis lingkaran itu, setengah ketebalan strokePx jadi
+        // "keluar" pas di titik singgung ke-4 sisi tsb dan ke-crop rata kotak --
+        // efeknya lingkaran kelihatan kepotong kayak kotak. Fix-nya: susutkan
+        // (inset) lingkarannya ke dalam sebesar setengah strokePx di semua sisi,
+        // supaya seluruh badan garis lingkaran muat penuh di dalam Canvas.
+        val inset = strokePx / 2
+        val diameter = this.size.minDimension - strokePx
+        drawArc(
+            brush = Brush.sweepGradient(
+                listOf(
+                    Color.Transparent,
+                    BrandVioletLight,
+                    BrandBlue,
+                    BrandCyanSoft,
+                    BrandCyanSoft.copy(alpha = 0f),
+                    Color.Transparent,
+                    Color.Transparent
+                )
+            ),
+            startAngle = 0f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+            size = androidx.compose.ui.geometry.Size(diameter, diameter),
+            style = Stroke(width = strokePx, cap = StrokeCap.Round)
+        )
+    }
 }

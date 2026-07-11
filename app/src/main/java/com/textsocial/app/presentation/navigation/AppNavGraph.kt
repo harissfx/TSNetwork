@@ -1,7 +1,9 @@
 package com.textsocial.app.presentation.navigation
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -12,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.textsocial.app.presentation.components.UpdateDialog
 import com.textsocial.app.presentation.screens.*
 import com.textsocial.app.presentation.viewmodel.*
 
@@ -29,6 +32,7 @@ fun AppNavGraph(
     val createPostViewModel: CreatePostViewModel = viewModel { CreatePostViewModel(homeViewModel) }
     val notificationViewModel: NotificationViewModel = viewModel { NotificationViewModel() }
     val searchViewModel: SearchViewModel = viewModel { SearchViewModel() }
+    val appUpdateViewModel: AppUpdateViewModel = viewModel { AppUpdateViewModel() }
 
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     LaunchedEffect(pendingDeepLinkRoute, currentBackStackEntry) {
@@ -38,222 +42,238 @@ fun AppNavGraph(
         }
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = Routes.SPLASH
-    ) {
-        composable(Routes.SPLASH) {
-            val splashViewModel: SplashViewModel = viewModel { SplashViewModel() }
-            SplashScreen(
-                viewModel = splashViewModel,
-                onNavigateToHome = {
-                    navController.navigate(Routes.MAIN) {
-                        popUpTo(Routes.SPLASH) { inclusive = true }
+    // Dipasang di level atas (bukan di satu screen tertentu) supaya dialog update bisa
+    // muncul di atas Home ATAU Login, tanpa perlu tahu screen mana yang lagi aktif.
+    LaunchedEffect(Unit) {
+        appUpdateViewModel.checkForUpdate()
+    }
+    val updateInfo by appUpdateViewModel.updateInfo.collectAsState()
+
+    Box {
+        NavHost(
+            navController = navController,
+            startDestination = Routes.SPLASH
+        ) {
+            composable(Routes.SPLASH) {
+                val splashViewModel: SplashViewModel = viewModel { SplashViewModel() }
+                SplashScreen(
+                    viewModel = splashViewModel,
+                    onNavigateToHome = {
+                        navController.navigate(Routes.MAIN) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    },
+                    onNavigateToLogin = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
                     }
-                },
-                onNavigateToLogin = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.SPLASH) { inclusive = true }
+                )
+            }
+
+            composable(Routes.LOGIN) {
+                val loginViewModel: LoginViewModel = viewModel { LoginViewModel() }
+                LoginScreen(
+                    viewModel = loginViewModel,
+                    onNavigateToHome = {
+                        navController.navigate(Routes.MAIN) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    },
+                    onNavigateToRegister = {
+                        navController.navigate(Routes.REGISTER)
                     }
-                }
-            )
-        }
+                )
+            }
 
-        composable(Routes.LOGIN) {
-            val loginViewModel: LoginViewModel = viewModel { LoginViewModel() }
-            LoginScreen(
-                viewModel = loginViewModel,
-                onNavigateToHome = {
-                    navController.navigate(Routes.MAIN) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
+            composable(Routes.REGISTER) {
+                val registerViewModel: RegisterViewModel = viewModel { RegisterViewModel() }
+                RegisterScreen(
+                    viewModel = registerViewModel,
+                    onNavigateToHome = {
+                        navController.navigate(Routes.MAIN) {
+                            popUpTo(Routes.REGISTER) { inclusive = true }
+                        }
+                    },
+                    onNavigateToLogin = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.REGISTER) { inclusive = true }
+                        }
                     }
-                },
-                onNavigateToRegister = {
-                    navController.navigate(Routes.REGISTER)
-                }
-            )
-        }
+                )
+            }
 
-        composable(Routes.REGISTER) {
-            val registerViewModel: RegisterViewModel = viewModel { RegisterViewModel() }
-            RegisterScreen(
-                viewModel = registerViewModel,
-                onNavigateToHome = {
-                    navController.navigate(Routes.MAIN) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
+            composable(Routes.MAIN) {
+                MainScreen(
+                    mainTabViewModel = mainTabViewModel,
+                    badgeViewModel = badgeViewModel,
+                    homeViewModel = homeViewModel,
+                    storyViewModel = storyViewModel,
+                    profileViewModel = profileViewModel,
+                    createPostViewModel = createPostViewModel,
+                    notificationViewModel = notificationViewModel,
+                    searchViewModel = searchViewModel,
+                    onNavigateToPostDetail = { postId -> navController.navigate(Routes.postDetail(postId)) },
+                    onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
+                    onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) },
+                    onNavigateToCreateStory = { navController.navigate(Routes.CREATE_STORY) },
+                    onNavigateToDMs = { navController.navigate(Routes.DM_LIST) },
+                    onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
+                    onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    onNavigateToPostDetailFromNotif = { postId, commentId -> navController.navigate(Routes.postDetail(postId, commentId)) },
+                    onNavigateToFollowList = { uid, uname, tab -> navController.navigate(Routes.followList(uid, uname, tab)) }
+                )
+            }
+
+            composable(
+                route = Routes.POST_DETAIL,
+                arguments = listOf(
+                    navArgument("postId") { type = NavType.StringType },
+                    navArgument("commentId") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { backStackEntry ->
+                val postId = backStackEntry.arguments?.getString("postId") ?: ""
+                val highlightCommentId = backStackEntry.arguments?.getString("commentId")
+                val postDetailViewModel: PostDetailViewModel = viewModel { PostDetailViewModel(homeViewModel) }
+                PostDetailScreen(
+                    postId = postId,
+                    highlightCommentId = highlightCommentId,
+                    viewModel = postDetailViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
+                )
+            }
+
+            composable(Routes.STORY_VIEW) { backStackEntry ->
+                StoryScreen(
+                    viewModel = storyViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.CREATE_STORY) { backStackEntry ->
+                CreateStoryScreen(
+                    viewModel = storyViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Routes.PROFILE,
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                ProfileScreen(
+                    userId = userId,
+                    viewModel = profileViewModel,
+                    storyViewModel = storyViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
+                    onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
+                    onNavigateToPostDetail = { pid -> navController.navigate(Routes.postDetail(pid)) },
+                    onNavigateToHome = {
+                        mainTabViewModel.goToTab(0)
+                        navController.popBackStack(Routes.MAIN, inclusive = false)
+                    },
+                    onNavigateToSearch = {
+                        mainTabViewModel.goToTab(1)
+                        navController.popBackStack(Routes.MAIN, inclusive = false)
+                    },
+                    onNavigateToCreatePost = {
+                        mainTabViewModel.goToTab(2)
+                        navController.popBackStack(Routes.MAIN, inclusive = false)
+                    },
+                    onNavigateToNotifications = {
+                        mainTabViewModel.goToTab(3)
+                        navController.popBackStack(Routes.MAIN, inclusive = false)
+                    },
+                    onNavigateToProfileMe = {
+                        mainTabViewModel.goToTab(4)
+                        navController.popBackStack(Routes.MAIN, inclusive = false)
+                    },
+                    onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
+                    onNavigateToFollowList = { uid, uname, tab ->
+                        navController.navigate(Routes.followList(uid, uname, tab))
+                    },
+                    onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) }
+                )
+            }
+
+            composable(Routes.EDIT_PROFILE) { backStackEntry ->
+                EditProfileScreen(
+                    viewModel = profileViewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(Routes.DM_LIST) {
+                val dmListViewModel: DMListViewModel = viewModel { DMListViewModel() }
+                DMListScreen(
+                    viewModel = dmListViewModel,
+                    onNavigateToChat = { uid, uname -> navController.navigate(Routes.dmChat(uid, uname)) },
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+
+            composable(
+                route = Routes.DM_CHAT,
+                arguments = listOf(
+                    navArgument("userId") { type = NavType.StringType },
+                    navArgument("username") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val uid = backStackEntry.arguments?.getString("userId") ?: ""
+                val uname = backStackEntry.arguments?.getString("username") ?: ""
+                val dmChatViewModel: DMChatViewModel = viewModel { DMChatViewModel() }
+                DMChatScreen(
+                    otherUserId = uid,
+                    otherUsername = uname,
+                    viewModel = dmChatViewModel,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
+                    onMessagesRead = { badgeViewModel.refreshUnreadMessages() }
+                )
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onLogoutSuccess = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(Routes.MAIN) { inclusive = true }
+                        }
                     }
-                },
-                onNavigateToLogin = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.REGISTER) { inclusive = true }
-                    }
-                }
-            )
+                )
+            }
+
+            composable(
+                route = Routes.FOLLOW_LIST,
+                arguments = listOf(
+                    navArgument("userId") { type = NavType.StringType },
+                    navArgument("username") { type = NavType.StringType },
+                    navArgument("tab") { type = NavType.IntType; defaultValue = 0 }
+                )
+            ) { backStackEntry ->
+                val uid = backStackEntry.arguments?.getString("userId") ?: ""
+                val uname = backStackEntry.arguments?.getString("username") ?: ""
+                val tab = backStackEntry.arguments?.getInt("tab") ?: 0
+                val followListViewModel: FollowListViewModel = viewModel { FollowListViewModel() }
+                FollowListScreen(
+                    viewModel = followListViewModel,
+                    targetUserId = uid,
+                    targetUsername = uname,
+                    initialTab = tab,
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
+                )
+            }
         }
 
-        composable(Routes.MAIN) {
-            MainScreen(
-                mainTabViewModel = mainTabViewModel,
-                badgeViewModel = badgeViewModel,
-                homeViewModel = homeViewModel,
-                storyViewModel = storyViewModel,
-                profileViewModel = profileViewModel,
-                createPostViewModel = createPostViewModel,
-                notificationViewModel = notificationViewModel,
-                searchViewModel = searchViewModel,
-                onNavigateToPostDetail = { postId -> navController.navigate(Routes.postDetail(postId)) },
-                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
-                onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) },
-                onNavigateToCreateStory = { navController.navigate(Routes.CREATE_STORY) },
-                onNavigateToDMs = { navController.navigate(Routes.DM_LIST) },
-                onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
-                onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
-                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                onNavigateToPostDetailFromNotif = { postId, commentId -> navController.navigate(Routes.postDetail(postId, commentId)) },
-                onNavigateToFollowList = { uid, uname, tab -> navController.navigate(Routes.followList(uid, uname, tab)) }
-            )
-        }
-
-        composable(
-            route = Routes.POST_DETAIL,
-            arguments = listOf(
-                navArgument("postId") { type = NavType.StringType },
-                navArgument("commentId") { type = NavType.StringType; nullable = true; defaultValue = null }
-            )
-        ) { backStackEntry ->
-            val postId = backStackEntry.arguments?.getString("postId") ?: ""
-            val highlightCommentId = backStackEntry.arguments?.getString("commentId")
-            val postDetailViewModel: PostDetailViewModel = viewModel { PostDetailViewModel(homeViewModel) }
-            PostDetailScreen(
-                postId = postId,
-                highlightCommentId = highlightCommentId,
-                viewModel = postDetailViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
-            )
-        }
-
-        composable(Routes.STORY_VIEW) { backStackEntry ->
-            StoryScreen(
-                viewModel = storyViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Routes.CREATE_STORY) { backStackEntry ->
-            CreateStoryScreen(
-                viewModel = storyViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Routes.PROFILE,
-            arguments = listOf(navArgument("userId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            val userId = backStackEntry.arguments?.getString("userId") ?: ""
-            ProfileScreen(
-                userId = userId,
-                viewModel = profileViewModel,
-                storyViewModel = storyViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToEditProfile = { navController.navigate(Routes.EDIT_PROFILE) },
-                onNavigateToChat = { uid, username -> navController.navigate(Routes.dmChat(uid, username)) },
-                onNavigateToPostDetail = { pid -> navController.navigate(Routes.postDetail(pid)) },
-                onNavigateToHome = {
-                    mainTabViewModel.goToTab(0)
-                    navController.popBackStack(Routes.MAIN, inclusive = false)
-                },
-                onNavigateToSearch = {
-                    mainTabViewModel.goToTab(1)
-                    navController.popBackStack(Routes.MAIN, inclusive = false)
-                },
-                onNavigateToCreatePost = {
-                    mainTabViewModel.goToTab(2)
-                    navController.popBackStack(Routes.MAIN, inclusive = false)
-                },
-                onNavigateToNotifications = {
-                    mainTabViewModel.goToTab(3)
-                    navController.popBackStack(Routes.MAIN, inclusive = false)
-                },
-                onNavigateToProfileMe = {
-                    mainTabViewModel.goToTab(4)
-                    navController.popBackStack(Routes.MAIN, inclusive = false)
-                },
-                onNavigateToSettings = { navController.navigate(Routes.SETTINGS) },
-                onNavigateToFollowList = { uid, uname, tab ->
-                    navController.navigate(Routes.followList(uid, uname, tab))
-                },
-                onNavigateToStories = { navController.navigate(Routes.STORY_VIEW) }
-            )
-        }
-
-        composable(Routes.EDIT_PROFILE) { backStackEntry ->
-            EditProfileScreen(
-                viewModel = profileViewModel,
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(Routes.DM_LIST) {
-            val dmListViewModel: DMListViewModel = viewModel { DMListViewModel() }
-            DMListScreen(
-                viewModel = dmListViewModel,
-                onNavigateToChat = { uid, uname -> navController.navigate(Routes.dmChat(uid, uname)) },
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
-
-        composable(
-            route = Routes.DM_CHAT,
-            arguments = listOf(
-                navArgument("userId") { type = NavType.StringType },
-                navArgument("username") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val uid = backStackEntry.arguments?.getString("userId") ?: ""
-            val uname = backStackEntry.arguments?.getString("username") ?: ""
-            val dmChatViewModel: DMChatViewModel = viewModel { DMChatViewModel() }
-            DMChatScreen(
-                otherUserId = uid,
-                otherUsername = uname,
-                viewModel = dmChatViewModel,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) },
-                onMessagesRead = { badgeViewModel.refreshUnreadMessages() }
-            )
-        }
-
-        composable(Routes.SETTINGS) {
-            SettingsScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onLogoutSuccess = {
-                    navController.navigate(Routes.LOGIN) {
-                        popUpTo(Routes.MAIN) { inclusive = true }
-                    }
-                }
-            )
-        }
-
-        composable(
-            route = Routes.FOLLOW_LIST,
-            arguments = listOf(
-                navArgument("userId") { type = NavType.StringType },
-                navArgument("username") { type = NavType.StringType },
-                navArgument("tab") { type = NavType.IntType; defaultValue = 0 }
-            )
-        ) { backStackEntry ->
-            val uid = backStackEntry.arguments?.getString("userId") ?: ""
-            val uname = backStackEntry.arguments?.getString("username") ?: ""
-            val tab = backStackEntry.arguments?.getInt("tab") ?: 0
-            val followListViewModel: FollowListViewModel = viewModel { FollowListViewModel() }
-            FollowListScreen(
-                viewModel = followListViewModel,
-                targetUserId = uid,
-                targetUsername = uname,
-                initialTab = tab,
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToProfile = { userId -> navController.navigate(Routes.profile(userId)) }
+        updateInfo?.let { info ->
+            UpdateDialog(
+                info = info,
+                onDismiss = { appUpdateViewModel.dismiss() }
             )
         }
     }

@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
@@ -22,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -58,6 +60,7 @@ fun ProfileScreen(
     val user by viewModel.user.collectAsState()
     val posts by viewModel.posts.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val isLoadingMorePosts by viewModel.isLoadingMorePosts.collectAsState()
     val isFollowing by viewModel.isFollowing.collectAsState()
     val followsMe by viewModel.followsMe.collectAsState()
     val allStories by storyViewModel.allStories.collectAsState()
@@ -65,6 +68,18 @@ fun ProfileScreen(
     val actionError by viewModel.actionError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val currentUserId = remember { com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "" }
+    val profileListState = rememberLazyListState()
+
+    LaunchedEffect(profileListState) {
+        snapshotFlow { profileListState.layoutInfo }
+            .collect { layoutInfo ->
+                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val totalItems = layoutInfo.totalItemsCount
+                if (totalItems > 0 && lastVisibleIndex >= totalItems - 5) {
+                    viewModel.loadMorePosts()
+                }
+            }
+    }
 
     LaunchedEffect(userId) {
         viewModel.loadProfile(userId)
@@ -131,7 +146,7 @@ fun ProfileScreen(
                         CircularProgressIndicator()
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(state = profileListState, modifier = Modifier.fillMaxSize()) {
                         user?.let { profile ->
                             item {
                                 Column(
@@ -402,6 +417,19 @@ fun ProfileScreen(
                                     onHashtagClick = {},
                                     onDeleteClick = { viewModel.deletePost(post.id) }
                                 )
+                            }
+
+                            if (isLoadingMorePosts) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    }
+                                }
                             }
                         }
                     }

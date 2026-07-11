@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -67,6 +68,8 @@ fun HomeScreen(
 ) {
     val posts by homeViewModel.posts.collectAsState()
     val isLoading by homeViewModel.isLoading.collectAsState()
+    val isLoadingMore by homeViewModel.isLoadingMore.collectAsState()
+    val hasMore by homeViewModel.hasMore.collectAsState()
     val activeHashtag by homeViewModel.activeHashtag.collectAsState()
     val feedMode by homeViewModel.feedMode.collectAsState()
     val stories by storyViewModel.stories.collectAsState()
@@ -74,6 +77,21 @@ fun HomeScreen(
     val storyActionError by storyViewModel.actionError.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val feedListState = rememberLazyListState()
+
+    // Infinite scroll: begitu item yang kelihatan sudah mendekati ujung list (5 item
+    // terakhir), ambil halaman post berikutnya. loadMorePosts() sendiri sudah menjaga
+    // diri dari pemanggilan dobel (cek isLoadingMore/hasMore di ViewModel).
+    LaunchedEffect(feedListState) {
+        snapshotFlow { feedListState.layoutInfo }
+            .collect { layoutInfo ->
+                val lastVisibleIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                val totalItems = layoutInfo.totalItemsCount
+                if (totalItems > 0 && lastVisibleIndex >= totalItems - 5) {
+                    homeViewModel.loadMorePosts()
+                }
+            }
+    }
 
     LaunchedEffect(actionError) {
         val message = actionError
@@ -184,6 +202,7 @@ fun HomeScreen(
                     .background(MaterialTheme.colorScheme.background)
             ) {
                 LazyColumn(
+                    state = feedListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
@@ -378,6 +397,19 @@ fun HomeScreen(
                                 },
                                 onDeleteClick = { homeViewModel.deletePost(post.id) }
                             )
+                        }
+
+                        if (isLoadingMore) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                }
+                            }
                         }
                     }
                 }

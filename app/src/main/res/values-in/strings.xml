@@ -29,6 +29,8 @@
     <string name="section_about">Tentang</string>
     <string name="app_version_label">OpenText v1.0.0</string>
     <string name="app_description">Platform media sosial berbasis teks open-source, dibangun dengan Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, dan pembatasan laju Upstash Redis.</string>
+    <string name="view_source_on_github">Lihat kode sumber di GitHub</string>
+    <string name="join_whatsapp_channel">Gabung channel WhatsApp kami</string>
     <string name="logout_button">Keluar dari Sesi</string>
     <string name="update_password_dialog_title">Perbarui Kata Sandi</string>
     <string name="password_encrypted_note">Semua input kata sandi dienkripsi saat dikirim.</string>
@@ -123,6 +125,7 @@
     <string name="no_view">Belum ada tayangan yang tercatat.</string>
     <string name="rpl_title">Balasan</string>
     <string name="rpl_postkos">Belum ada tanggapan. Mulai percakapan!</string>
+    <string name="muat_komentar_lain">Muat komentar lainnya</string>
     <string name="ava_title">Ketuk foto untuk mengganti dari galeri.</string>
     <string name="war_ava">Hanya huruf, angka, dan underscore, minimal 3 karakter.</string>
     <string name="sv_ava">Simpan</string>
@@ -157,6 +160,8 @@
     <string name="error_resolve_email_failed">Gagal mendapatkan email dari username</string>
     <string name="error_api_generic">Terjadi kesalahan API</string>
     <string name="error_password_reset_failed">Gagal mengajukan reset kata sandi</string>
+    <string name="error_current_password_incorrect">Kata sandi saat ini salah</string>
+    <string name="current_password_label">Kata Sandi Saat Ini</string>
     <string name="error_no_refresh_token">Refresh token tidak tersedia</string>
     <string name="error_refresh_token_failed">Gagal memperbarui token: %1$s</string>
     <string name="error_fetch_posts_failed">Gagal mengambil postingan dari server: %1$s</string>
@@ -216,4 +221,10 @@
     <string name="notif_empty_mention">Belum ada notifikasi mention</string>
     <string name="notif_empty_follow">Belum ada notifikasi follow</string>
     <string name="delete_button">Hapus</string>
+    <string name="update_dialog_title">Ada versi baru</string>
+    <string name="update_dialog_force_title">Update wajib</string>
+    <string name="update_dialog_message">Versi %1$s sudah tersedia. Update sekarang untuk fitur dan perbaikan terbaru.</string>
+    <string name="update_dialog_force_message">Versi %1$s wajib diupdate untuk terus menggunakan aplikasi ini. Silakan update sekarang.</string>
+    <string name="update_dialog_button_update">Update</string>
+    <string name="update_dialog_button_later">Nanti</string>
 </resources>

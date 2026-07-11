@@ -20,6 +20,7 @@ object NotificationHelper {
     const val EXTRA_NOTIF_COMMENT_ID = "notif_comment_id"
     const val EXTRA_NOTIF_SENDER_ID = "notif_sender_id"
     const val EXTRA_NOTIF_SENDER_USERNAME = "notif_sender_username"
+    const val EXTRA_NOTIF_DOWNLOAD_URL = "notif_download_url"
 
     fun createNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -59,6 +60,7 @@ object NotificationHelper {
             putExtra(EXTRA_NOTIF_COMMENT_ID, data["comment_id"])
             putExtra(EXTRA_NOTIF_SENDER_ID, data["sender_id"])
             putExtra(EXTRA_NOTIF_SENDER_USERNAME, data["sender_username"])
+            putExtra(EXTRA_NOTIF_DOWNLOAD_URL, data["download_url"])
         }
         val pendingIntent = PendingIntent.getActivity(
             context,

@@ -33,6 +33,21 @@ import java.util.concurrent.ConcurrentHashMap
 
 class SupabaseAuthException(val code: Int, val errorMsg: String) : Exception("Error $code: $errorMsg")
 
+// Jendela post terbaru yang dipindai untuk hitung trending hashtag (dipakai di
+// UserRepositoryImpl.getTrendingHashtags). Dulu tanpa batas (whole table); sekarang
+// dibatasi supaya beban query & payload tidak terus membesar seiring jumlah post
+// total di platform bertambah. Taruh di level file (bukan di dalam salah satu class
+// repository) karena dipakai lintas class.
+private const val TRENDING_HASHTAG_SCAN_WINDOW = 500
+
+/** Parse header Postgrest "Content-Range: 0-19/153" -> 153. Null kalau header tidak ada
+ *  atau totalnya "*" (Postgrest kirim ini saat count belum/tidak dihitung). Top-level supaya
+ *  dipakai bareng oleh beberapa repository (posts, follows, dst) yang butuh count=exact. */
+private fun parseContentRangeTotal(headerValue: String?): Int? {
+    val total = headerValue?.substringAfter('/', missingDelimiterValue = "")
+    return total?.takeIf { it.isNotBlank() && it != "*" }?.toIntOrNull()
+}
+
 private fun getSupabaseError(context: Context, code: Int, errorBody: String?): SupabaseAuthException {
     if (errorBody.isNullOrBlank()) {
         return SupabaseAuthException(code, LocaleManager.applyLocale(context).getString(R.string.error_api_generic))
@@ -212,6 +227,51 @@ class AuthRepositoryImpl(
         }
     }
 
+    override suspend fun verifyCurrentPassword(currentPassword: String): Result<Unit> {
+        if (currentPassword.isBlank()) {
+            return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_login_fields_empty)))
+        }
+        return try {
+            val userId = prefs.getUserId()
+                ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_api_generic)))
+
+            val profileResponse = apiService.getProfile("eq.$userId")
+            val email = profileResponse.body()?.firstOrNull()?.email
+                ?: return Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_api_generic)))
+
+            // Sengaja TIDAK menyimpan access_token/refresh_token dari respons ini ke prefs --
+            // ini cuma dipakai untuk mengecek apakah currentPassword benar, bukan untuk login
+            // ulang, supaya sesi yang sedang aktif tidak ikut berubah/tertimpa.
+            val response = apiService.signIn(SupabaseSignInRequest(email = email, password = currentPassword))
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    Exception(LocaleManager.applyLocale(context).getString(R.string.error_current_password_incorrect))
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updatePassword(newPassword: String): Result<Unit> {
+        return try {
+            val response = apiService.updatePassword(
+                com.textsocial.app.data.model.UpdatePasswordRequest(password = newPassword)
+            )
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    getSupabaseError(context, response.code(), response.errorBody()?.string())
+                )
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     override suspend fun logout(): Result<Unit> {
         prefs.clear()
         _currentUser.value = null
@@ -310,80 +370,147 @@ class PostRepositoryImpl(
         fetchedAt = fetchedAt
     )
 
+    /** Paksa fetch ulang dari server di pemanggilan getPosts berikutnya. */
     private suspend fun invalidatePostsCache() {
         db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_POSTS, 0L))
     }
 
-    override suspend fun getPosts(hashtag: String?): Result<List<Post>> {
-        val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_POSTS) ?: 0L
-        if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.POSTS_TTL_MS)) {
-            val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
-            if (cachedPosts.isNotEmpty()) {
-                val filtered = if (hashtag != null) {
-                    cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) }
-                } else cachedPosts
-                localPosts.value = filtered
-                return Result.success(filtered)
+    /** Ubah PostDto hasil API jadi domain Post, sekalian isi status "isLiked" & link preview.
+     *  Dipakai bersama oleh getPosts/getPostById/getPostsByUser biar logikanya konsisten. */
+    private suspend fun dtosToPosts(dtos: List<PostDto>): List<Post> {
+        if (dtos.isEmpty()) return emptyList()
+        val myId = prefs.getUserId() ?: ""
+
+        // Cuma minta status like utk post-post yang ADA di batch ini (mis. 20 post di satu
+        // halaman feed), bukan seluruh riwayat like user. PostgREST "in.(...)" filter di
+        // kolom post_id -- payload & waktu query jadi konstan terhadap jumlah post di batch,
+        // bukan terhadap total like historis user (yang bisa ribuan pada user aktif lama).
+        val postIdsInBatch = dtos.map { it.id }.distinct()
+        val likedPostIds = if (postIdsInBatch.isEmpty()) {
+            emptySet()
+        } else {
+            val postIdFilter = "in.(${postIdsInBatch.joinToString(",")})"
+            val likesResponse = apiService.getLikes(postIdFilter = postIdFilter, userIdFilter = "eq.$myId")
+            if (likesResponse.isSuccessful) {
+                likesResponse.body()?.map { it.post_id }?.toSet() ?: emptySet()
+            } else emptySet()
+        }
+        val urlsByPostId = dtos.associate { it.id to com.textsocial.app.util.LinkUtils.extractFirstUrl(it.content) }
+        val previewsByUrl = fetchCachedLinkPreviews(urlsByPostId.values.filterNotNull().distinct())
+
+        return dtos.map { dto ->
+            val senderUsername = dto.users?.username ?: "user"
+            Post(
+                id = dto.id,
+                userId = dto.user_id,
+                username = senderUsername,
+                displayName = dto.users?.display_name ?: senderUsername.replaceFirstChar { it.uppercase() },
+                userAvatarColor = getAvatarColor(senderUsername),
+                text = dto.content,
+                createdAt = dto.created_at,
+                likesCount = dto.like_count,
+                commentsCount = dto.comment_count,
+                isLiked = likedPostIds.contains(dto.id),
+                isVerified = dto.users?.is_verified ?: false,
+                userAvatarUrl = dto.users?.avatar_url,
+                linkPreview = urlsByPostId[dto.id]?.let { previewsByUrl[it] }
+            )
+        }
+    }
+
+    override suspend fun getPosts(hashtag: String?, before: String?, pageSize: Int): Result<PostsPage> {
+        // Cache TTL cuma dipakai untuk HALAMAN PERTAMA (before == null). Halaman ke-2 dst
+        // selalu langsung ke server: isinya beda-beda tergantung cursor, jadi tidak worth
+        // disimpan ke Room (dan supaya tidak menimpa cache halaman pertama yang sudah ada).
+        if (before == null) {
+            val cacheTimestamp = db.cacheMetaDao().getTimestamp(CacheConfig.META_KEY_POSTS) ?: 0L
+            if (CacheConfig.isFresh(cacheTimestamp, CacheConfig.POSTS_TTL_MS)) {
+                val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
+                if (cachedPosts.isNotEmpty()) {
+                    val filtered = if (hashtag != null) {
+                        cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) }
+                    } else cachedPosts
+                    localPosts.value = filtered
+                    // Cache lama tersimpan tanpa info cursor persis, jadi kita anggap ada
+                    // halaman berikutnya -- aman, scroll berikutnya tetap langsung ke server.
+                    return Result.success(PostsPage(filtered, hasMore = cachedPosts.size >= pageSize))
+                }
             }
         }
 
         return try {
-            val response = apiService.getPosts()
+            val response = apiService.getPosts(
+                createdBefore = before?.let { "lt.$it" },
+                limit = pageSize
+            )
             if (response.isSuccessful && response.body() != null) {
-                val dtos = response.body()!!
-                val myId = prefs.getUserId() ?: ""
+                val posts = dtosToPosts(response.body()!!)
 
-                val likesResponse = apiService.getLikes(postIdFilter = null, userIdFilter = "eq.$myId")
-                val likedPostIds = if (likesResponse.isSuccessful) {
-                    likesResponse.body()?.map { it.post_id }?.toSet() ?: emptySet()
-                } else emptySet()
-                val urlsByPostId = dtos.associate { it.id to com.textsocial.app.util.LinkUtils.extractFirstUrl(it.content) }
-                val previewsByUrl = fetchCachedLinkPreviews(urlsByPostId.values.filterNotNull().distinct())
-
-                val posts = dtos.map { dto ->
-                    val senderUsername = dto.users?.username ?: "user"
-                    Post(
-                        id = dto.id,
-                        userId = dto.user_id,
-                        username = senderUsername,
-                        displayName = dto.users?.display_name ?: senderUsername.replaceFirstChar { it.uppercase() },
-                        userAvatarColor = getAvatarColor(senderUsername),
-                        text = dto.content,
-                        createdAt = dto.created_at,
-                        likesCount = dto.like_count,
-                        commentsCount = dto.comment_count,
-                        isLiked = likedPostIds.contains(dto.id),
-                        isVerified = dto.users?.is_verified ?: false,
-                        userAvatarUrl = dto.users?.avatar_url,
-                        linkPreview = urlsByPostId[dto.id]?.let { previewsByUrl[it] }
-                    )
+                if (before == null) {
+                    val now = System.currentTimeMillis()
+                    db.postCacheDao().replaceAll(posts.map { it.toCacheEntity(now) })
+                    db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_POSTS, now))
+                    localPosts.value = posts
                 }
-
-                val now = System.currentTimeMillis()
-                db.postCacheDao().replaceAll(posts.map { it.toCacheEntity(now) })
-                db.cacheMetaDao().upsert(CacheMetaEntity(CacheConfig.META_KEY_POSTS, now))
 
                 val filtered = if (hashtag != null) {
                     posts.filter { it.text.contains(hashtag, ignoreCase = true) }
                 } else posts
 
-                localPosts.value = filtered
-                Result.success(filtered)
-            } else {
+                Result.success(PostsPage(filtered, hasMore = posts.size >= pageSize))
+            } else if (before == null) {
+                // Server gagal/timeout di halaman pertama -> fallback ke cache lama daripada kosong total.
                 val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
                 if (cachedPosts.isNotEmpty()) {
-                    Result.success(if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts)
+                    val filtered = if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts
+                    Result.success(PostsPage(filtered, hasMore = true))
                 } else {
                     Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_posts_failed, response.code().toString())))
                 }
+            } else {
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_posts_failed, response.code().toString())))
             }
         } catch (e: Exception) {
-            val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
-            if (cachedPosts.isNotEmpty()) {
-                Result.success(if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts)
-            } else {
-                Result.failure(e)
+            if (before == null) {
+                val cachedPosts = db.postCacheDao().getAll().map { it.toDomain() }
+                if (cachedPosts.isNotEmpty()) {
+                    val filtered = if (hashtag != null) cachedPosts.filter { it.text.contains(hashtag, ignoreCase = true) } else cachedPosts
+                    return Result.success(PostsPage(filtered, hasMore = true))
+                }
             }
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getPostById(postId: String): Result<Post?> {
+        return try {
+            val response = apiService.getPostById(idFilter = "eq.$postId")
+            if (response.isSuccessful) {
+                Result.success(dtosToPosts(response.body().orEmpty()).firstOrNull())
+            } else {
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_posts_failed, response.code().toString())))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getPostsByUser(userId: String, before: String?, pageSize: Int): Result<PostsPage> {
+        return try {
+            val response = apiService.getPostsByUser(
+                userIdFilter = "eq.$userId",
+                createdBefore = before?.let { "lt.$it" },
+                limit = pageSize
+            )
+            if (response.isSuccessful) {
+                val posts = dtosToPosts(response.body().orEmpty())
+                val totalCount = parseContentRangeTotal(response.headers()["Content-Range"])
+                Result.success(PostsPage(posts, hasMore = posts.size >= pageSize, totalCount = totalCount))
+            } else {
+                Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_posts_failed, response.code().toString())))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -476,9 +603,13 @@ class PostRepositoryImpl(
         }
     }
 
-    override suspend fun getComments(postId: String): Result<List<Comment>> {
+    override suspend fun getComments(postId: String, after: String?, pageSize: Int): Result<CommentsPage> {
         return try {
-            val response = apiService.getComments("eq.$postId")
+            val response = apiService.getComments(
+                postIdFilter = "eq.$postId",
+                createdAfter = after?.let { "gt.$it" },
+                limit = pageSize
+            )
             if (response.isSuccessful && response.body() != null) {
                 val dtos = response.body()!!
                 val myId = prefs.getUserId() ?: ""
@@ -510,7 +641,7 @@ class PostRepositoryImpl(
                         avatarUrl = dto.users?.avatar_url
                     )
                 }
-                Result.success(comments)
+                Result.success(CommentsPage(comments, hasMore = comments.size >= pageSize))
             } else {
                 Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_comments_failed, response.code().toString())))
             }
@@ -598,6 +729,8 @@ class PostRepositoryImpl(
     }
 
     override suspend fun getLinkPreview(url: String): Result<LinkPreview?> {
+        // Link preview jarang sekali berubah -> cek cache device dulu (TTL 24 jam)
+        // sebelum minta ke edge function link-preview di server.
         val cached = db.linkPreviewCacheDao().get(url)
         if (cached != null && CacheConfig.isFresh(cached.fetchedAt, CacheConfig.LINK_PREVIEW_TTL_MS)) {
             return Result.success(cached.toDomain())
@@ -606,6 +739,7 @@ class PostRepositoryImpl(
         return try {
             val response = apiService.fetchLinkPreview(com.textsocial.app.data.model.LinkPreviewRequest(url))
             if (!response.isSuccessful) {
+                // Gagal fetch baru -> tetap pakai cache lama kalau ada, daripada gagal total.
                 return if (cached != null) Result.success(cached.toDomain())
                 else Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_fetch_link_preview_failed, response.code().toString())))
             }
@@ -639,6 +773,8 @@ class PostRepositoryImpl(
 
     private suspend fun fetchCachedLinkPreviews(urls: List<String>): Map<String, LinkPreview> {
         if (urls.isEmpty()) return emptyMap()
+
+        // 1) Ambil dulu yang sudah ada & masih segar di cache device.
         val now = System.currentTimeMillis()
         val localHits = db.linkPreviewCacheDao().getMultiple(urls)
             .filter { CacheConfig.isFresh(it.fetchedAt, CacheConfig.LINK_PREVIEW_TTL_MS) }
@@ -646,6 +782,8 @@ class PostRepositoryImpl(
 
         val remainingUrls = urls.filterNot { localHits.containsKey(it) }
         if (remainingUrls.isEmpty()) return localHits
+
+        // 2) Sisanya baru diminta ke server (endpoint cache preview Supabase).
         val remoteHits = try {
             val filter = "in.(${remainingUrls.joinToString(",") { "\"$it\"" }})"
             val response = apiService.getLinkPreviewsCached(urlInFilter = filter)
@@ -751,6 +889,7 @@ class StoryRepositoryImpl(
 
                 val allViewerUsernames = viewerUsernamesByStoryId.values.flatten().distinct()
                 val viewerProfilesByUsername = fetchProfilesByUsernames(allViewerUsernames)
+
                 val stories = dtos.map { dto ->
                     val viewerUsernames = viewerUsernamesByStoryId[dto.id] ?: emptyList()
                     val senderUsername = dto.users?.username ?: "user"
@@ -1519,10 +1658,15 @@ class UserRepositoryImpl(
     override suspend fun isFollowing(targetUserId: String): Result<Boolean> {
         return try {
             val myId = prefs.getUserId() ?: return Result.success(false)
-            val response = apiService.getFollowers("eq.$targetUserId")
+            // Cek pasangan (myId, targetUserId) langsung lewat unique constraint -- dulu
+            // manggil getFollowers(targetUserId) TANPA LIMIT (narik seluruh follower akun
+            // target cuma buat cek 1 boolean), bisa berat banget di akun populer/verified.
+            val response = apiService.checkFollowExists(
+                followerIdFilter = "eq.$myId",
+                followingIdFilter = "eq.$targetUserId"
+            )
             if (response.isSuccessful) {
-                val followingNow = response.body()?.any { it.follower_id == myId } ?: false
-                Result.success(followingNow)
+                Result.success(response.body()?.isNotEmpty() ?: false)
             } else {
                 Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_check_follow_status_failed, response.code().toString())))
             }
@@ -1538,36 +1682,52 @@ class UserRepositoryImpl(
         }
 
         return try {
-            val followersResponse = apiService.getFollowers("eq.$userId")
-            val followingResponse = apiService.getFollowing("eq.$userId")
-            val followersCount = followersResponse.body()?.size ?: 0
-            val followingCount = followingResponse.body()?.size ?: 0
+            // Dulu narik SELURUH baris follows lewat getFollowers()/getFollowing() lalu
+            // di-.size() di client. Sekarang minta Postgrest hitung langsung lewat header
+            // Content-Range (count=exact) -- payload cuma 1 baris (limit=1), count di
+            // header tetap akurat terhadap total baris yang match filter.
+            val followersResponse = apiService.getFollowersCount("eq.$userId")
+            val followingResponse = apiService.getFollowingCount("eq.$userId")
+            val followersCount = parseContentRangeTotal(followersResponse.headers()["Content-Range"]) ?: 0
+            val followingCount = parseContentRangeTotal(followingResponse.headers()["Content-Range"]) ?: 0
             db.profileCacheDao().updateFollowCounts(userId, followersCount, followingCount, System.currentTimeMillis())
             Result.success(followersCount to followingCount)
         } catch (e: Exception) {
             if (cached != null) Result.success(cached.followersCount to cached.followingCount) else Result.failure(e)
         }
     }
+
+    /** Ambil profil untuk banyak id sekaligus lewat "id=in.(...)", di-chunk per 100 id supaya
+     *  panjang URL tetap aman. Dulu 1 request per id secara SEQUENTIAL (N+1 query) -- follow
+     *  list dengan ribuan follower berarti ribuan HTTP request berurutan cuma buat render 1 layar. */
     private suspend fun mapUserIdsToProfiles(ids: List<String>): List<User> {
-        return ids.mapNotNull { id ->
+        if (ids.isEmpty()) return emptyList()
+        val profilesById = HashMap<String, ProfileDto>()
+        for (chunk in ids.distinct().chunked(100)) {
             try {
-                val profileResp = apiService.getProfile("eq.$id")
-                profileResp.body()?.firstOrNull()?.let { p ->
-                    User(
-                        id = p.id,
-                        username = p.username,
-                        email = p.email ?: "",
-                        displayName = p.display_name,
-                        bio = p.bio,
-                        avatarColor = getAvatarColor(p.username),
-                        isPrivate = p.is_private,
-                        isVerified = p.is_verified,
-                        avatarUrl = p.avatar_url,
-                        hideFollowingList = p.hide_following_list
-                    )
-                }
+                val filter = "in.(${chunk.joinToString(",")})"
+                val profileResp = apiService.getProfile(filter)
+                profileResp.body()?.forEach { p -> profilesById[p.id] = p }
             } catch (e: Exception) {
-                null
+                // Satu chunk gagal tidak menggagalkan semuanya -- id yang tidak ketemu
+                // tetap difilter lewat mapNotNull di bawah, sama seperti perilaku lama
+                // saat 1 getProfile() individual gagal.
+            }
+        }
+        return ids.mapNotNull { id ->
+            profilesById[id]?.let { p ->
+                User(
+                    id = p.id,
+                    username = p.username,
+                    email = p.email ?: "",
+                    displayName = p.display_name,
+                    bio = p.bio,
+                    avatarColor = getAvatarColor(p.username),
+                    isPrivate = p.is_private,
+                    isVerified = p.is_verified,
+                    avatarUrl = p.avatar_url,
+                    hideFollowingList = p.hide_following_list
+                )
             }
         }
     }
@@ -1615,10 +1775,14 @@ class UserRepositoryImpl(
     override suspend fun isFollowedBy(targetUserId: String): Result<Boolean> {
         return try {
             val myId = prefs.getUserId() ?: return Result.success(false)
-            val response = apiService.getFollowers("eq.$myId")
+            // Sama seperti isFollowing() -- cek pasangan (targetUserId, myId) langsung,
+            // bukan narik seluruh followers list milik diri sendiri.
+            val response = apiService.checkFollowExists(
+                followerIdFilter = "eq.$targetUserId",
+                followingIdFilter = "eq.$myId"
+            )
             if (response.isSuccessful) {
-                val followedBy = response.body()?.any { it.follower_id == targetUserId } ?: false
-                Result.success(followedBy)
+                Result.success(response.body()?.isNotEmpty() ?: false)
             } else {
                 Result.failure(Exception(LocaleManager.applyLocale(context).getString(R.string.error_check_followback_status_failed, response.code().toString())))
             }
@@ -1839,7 +2003,11 @@ class UserRepositoryImpl(
         }
 
         return try {
-            val response = apiService.getPosts()
+            // Dulu ini narik SELURUH tabel posts cuma buat hitung hashtag -- makin lama
+            // makin berat seiring post bertambah. Sekarang dibatasi ke N post TERBARU saja:
+            // trending secara alami memang cuma peduli aktivitas belakangan, jadi ini juga
+            // lebih benar secara produk, bukan cuma lebih murah.
+            val response = apiService.getPosts(limit = TRENDING_HASHTAG_SCAN_WINDOW)
             if (response.isSuccessful && response.body() != null) {
                 val posts = response.body()!!
                 val hashtagCounts = mutableMapOf<String, Int>()
@@ -1893,4 +2061,43 @@ class UserRepositoryImpl(
             Result.failure(e)
         }
     }
+}
+
+class AppUpdateRepositoryImpl(
+    private val apiService: SupabaseApiService,
+    private val prefs: EncryptedPreferencesManager
+) : AppUpdateRepository {
+
+    override suspend fun checkForUpdate(): Result<AppUpdateInfo?> {
+        return try {
+            val response = apiService.getLatestAppVersion()
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("Error ${response.code()}: gagal mengambil info versi"))
+            }
+            val latest = response.body()?.firstOrNull() ?: return Result.success(null)
+            val currentVersionCode = com.textsocial.app.BuildConfig.VERSION_CODE
+
+            if (latest.version_code <= currentVersionCode) {
+                return Result.success(null)
+            }
+
+            val isForceUpdate = latest.min_supported_version_code?.let { currentVersionCode < it } ?: false
+
+            Result.success(
+                AppUpdateInfo(
+                    versionCode = latest.version_code,
+                    versionName = latest.version_name,
+                    releaseNotes = latest.release_notes,
+                    downloadUrl = latest.download_url,
+                    isForceUpdate = isForceUpdate
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override fun getDismissedVersionCode(): Int = prefs.getDismissedUpdateVersionCode()
+
+    override fun dismissVersion(versionCode: Int) = prefs.saveDismissedUpdateVersionCode(versionCode)
 }

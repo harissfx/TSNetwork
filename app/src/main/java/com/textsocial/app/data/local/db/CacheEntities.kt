@@ -3,6 +3,13 @@ package com.textsocial.app.data.local.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/**
+ * Entitas-entitas Room untuk menyimpan cache data di device.
+ *
+ * Semua entity punya kolom `fetchedAt` (epoch millis) yang dipakai untuk
+ * menentukan apakah data masih "segar" (di bawah TTL) atau harus di-refresh
+ * ulang ke server. Lihat [com.textsocial.app.data.local.CacheConfig] untuk nilai TTL.
+ */
 
 @Entity(tableName = "post_cache")
 data class PostCacheEntity(
@@ -41,6 +48,8 @@ data class ProfileCacheEntity(
     val avatarUrl: String?,
     val hideFollowingList: Boolean,
     val fetchedAt: Long,
+    // waktu terpisah untuk followers/following count karena bisa berubah
+    // lebih cepat (like/follow) dibanding data profil lain
     val followCountsFetchedAt: Long = 0L
 )
 
@@ -53,7 +62,9 @@ data class StoryCacheEntity(
     val createdAt: String,
     val expiresAt: String,
     val avatarColor: String,
+    // list username disimpan dipisah koma
     val viewsCsv: String,
+    // format per viewer: username::avatarUrl::avatarColor::isVerified, dipisah ";;"
     val viewersEncoded: String,
     val backgroundColor: String,
     val textColor: String,
@@ -123,6 +134,11 @@ data class TrendingHashtagCacheEntity(
     val fetchedAt: Long
 )
 
+/**
+ * Menyimpan cap waktu "kapan terakhir daftar ini di-refresh dari server",
+ * dipakai untuk endpoint yang berupa list (posts, stories, conversations, dst)
+ * yang tidak punya key per-item alami untuk dicek satu-satu.
+ */
 @Entity(tableName = "cache_meta")
 data class CacheMetaEntity(
     @PrimaryKey val key: String,

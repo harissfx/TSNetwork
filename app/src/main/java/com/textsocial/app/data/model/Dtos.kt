@@ -182,6 +182,11 @@ data class RecoverPasswordRequest(
 )
 
 @JsonClass(generateAdapter = true)
+data class UpdatePasswordRequest(
+    val password: String
+)
+
+@JsonClass(generateAdapter = true)
 data class UpdateProfileRequest(
     val display_name: String?,
     val bio: String?,
@@ -321,4 +326,16 @@ data class HideConversationForUser1Request(
 @JsonClass(generateAdapter = true)
 data class HideConversationForUser2Request(
     val hidden_for_user2: Boolean = true
+)
+
+@JsonClass(generateAdapter = true)
+data class AppVersionDto(
+    val id: String,
+    val platform: String,
+    val version_code: Int,
+    val version_name: String,
+    val release_notes: String? = null,
+    val download_url: String,
+    val min_supported_version_code: Int? = null,
+    val created_at: String
 )

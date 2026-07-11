@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -314,6 +315,71 @@ fun SettingsScreen(
                             lineHeight = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                        // Project ini open source -- link ke repo GitHub biar orang lain
+                        // yang tertarik bisa lihat kodenya atau ikut berkontribusi.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://github.com/harissfx/OpenText")
+                                        )
+                                    )
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_github),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = stringResource(R.string.view_source_on_github),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+
+                        // Channel WhatsApp buat pengumuman/info update rilis.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://whatsapp.com/channel/0029aemEQo11ulHSnXQrt0X")
+                                        )
+                                    )
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_whatsapp),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = stringResource(R.string.join_whatsapp_channel),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
 
@@ -442,12 +508,27 @@ fun SettingsScreen(
     }
 
     if (showPasswordDialog) {
+        var currentPass by remember { mutableStateOf("") }
         var newPass by remember { mutableStateOf("") }
         var confirmPass by remember { mutableStateOf("") }
         var isSuccess by remember { mutableStateOf(false) }
+        var isSubmitting by remember { mutableStateOf(false) }
+        var errorMessage by remember { mutableStateOf<String?>(null) }
+        var isCurrentPassVisible by remember { mutableStateOf(false) }
+        var isNewPassVisible by remember { mutableStateOf(false) }
+        var isConfirmPassVisible by remember { mutableStateOf(false) }
+
+        // Supabase Auth secara default menolak password < 6 karakter. Divalidasi
+        // di sisi klien dulu supaya user dapat feedback cepat, tapi server tetap
+        // jadi sumber kebenaran akhir (errorMessage menampung error dari server,
+        // mis. "password sama dengan yang lama", dsb).
+        val passwordsMismatch = confirmPass.isNotEmpty() && newPass != confirmPass
+        val isTooShort = newPass.isNotEmpty() && newPass.length < 6
+        val canSubmit = currentPass.isNotEmpty() && newPass.isNotEmpty() &&
+                newPass == confirmPass && newPass.length >= 6 && !isSubmitting
 
         AlertDialog(
-            onDismissRequest = { showPasswordDialog = false },
+            onDismissRequest = { if (!isSubmitting) showPasswordDialog = false },
             title = { Text(stringResource(R.string.update_password_dialog_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -456,17 +537,61 @@ fun SettingsScreen(
                     } else {
                         Text(stringResource(R.string.password_encrypted_note))
                         OutlinedTextField(
+                            value = currentPass,
+                            onValueChange = { currentPass = it; errorMessage = null },
+                            label = { Text(stringResource(R.string.current_password_label)) },
+                            visualTransformation = if (isCurrentPassVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isCurrentPassVisible = !isCurrentPassVisible }) {
+                                    Icon(
+                                        imageVector = if (isCurrentPassVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            enabled = !isSubmitting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
                             value = newPass,
-                            onValueChange = { newPass = it },
+                            onValueChange = { newPass = it; errorMessage = null },
                             label = { Text(stringResource(R.string.new_password_label)) },
+                            visualTransformation = if (isNewPassVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isNewPassVisible = !isNewPassVisible }) {
+                                    Icon(
+                                        imageVector = if (isNewPassVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            isError = isTooShort,
+                            enabled = !isSubmitting,
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = confirmPass,
-                            onValueChange = { confirmPass = it },
+                            onValueChange = { confirmPass = it; errorMessage = null },
                             label = { Text(stringResource(R.string.confirm_password_label)) },
+                            visualTransformation = if (isConfirmPassVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { isConfirmPassVisible = !isConfirmPassVisible }) {
+                                    Icon(
+                                        imageVector = if (isConfirmPassVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null
+                                    )
+                                }
+                            },
+                            isError = passwordsMismatch,
+                            enabled = !isSubmitting,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        errorMessage?.let {
+                            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                        if (isSubmitting) {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
             },
@@ -476,11 +601,31 @@ fun SettingsScreen(
                 } else {
                     Button(
                         onClick = {
-                            if (newPass.isNotEmpty() && newPass == confirmPass) {
-                                isSuccess = true
+                            isSubmitting = true
+                            errorMessage = null
+                            coroutineScope.launch {
+                                val authRepo = ServiceLocator.authRepository
+                                // 1) Pastikan dulu password LAMA yang diinput benar, baru boleh
+                                //    lanjut ganti. Ini mencegah orang yang cuma "pinjam" sesi/HP
+                                //    yang masih login bisa ganti password tanpa tahu password asli.
+                                val verifyResult = authRepo.verifyCurrentPassword(currentPass)
+                                verifyResult.onSuccess {
+                                    val updateResult = authRepo.updatePassword(newPass)
+                                    isSubmitting = false
+                                    updateResult.onSuccess {
+                                        isSuccess = true
+                                    }.onFailure { exception ->
+                                        errorMessage = exception.message
+                                            ?: context.getString(R.string.error_api_generic)
+                                    }
+                                }.onFailure { exception ->
+                                    isSubmitting = false
+                                    errorMessage = exception.message
+                                        ?: context.getString(R.string.error_api_generic)
+                                }
                             }
                         },
-                        enabled = newPass.isNotEmpty() && newPass == confirmPass
+                        enabled = canSubmit
                     ) {
                         Text(stringResource(R.string.update_button))
                     }
@@ -488,7 +633,10 @@ fun SettingsScreen(
             },
             dismissButton = {
                 if (!isSuccess) {
-                    TextButton(onClick = { showPasswordDialog = false }) { Text(stringResource(R.string.cancel_button)) }
+                    TextButton(
+                        onClick = { showPasswordDialog = false },
+                        enabled = !isSubmitting
+                    ) { Text(stringResource(R.string.cancel_button)) }
                 }
             }
         )

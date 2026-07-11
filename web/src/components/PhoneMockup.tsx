@@ -13,7 +13,11 @@ import {
   MoreVertical,
   Lock,
   CheckCheck,
-  Link
+  Link,
+  Home,
+  Search,
+  CirclePlus,
+  Bell
 } from "lucide-react";
 
 export function PhoneMockup() {
@@ -30,7 +34,7 @@ export function PhoneMockup() {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
-    
+
     const newMsg = {
       id: Date.now(),
       sender: "me",
@@ -56,7 +60,7 @@ export function PhoneMockup() {
 
   // Story State
   const storyBackgrounds = [
-    { bg: "bg-gradient-to-tr from-[#FF5722] to-[#FF8A65]", text: "text-white", font: "font-sans" },
+    { bg: "bg-gradient-to-tr from-[#4C6FFF] to-[#39E8F9]", text: "text-white", font: "font-sans" },
     { bg: "bg-zinc-900 border border-brand/50", text: "text-brand", font: "font-mono" },
     { bg: "bg-emerald-950", text: "text-emerald-300", font: "font-serif" },
     { bg: "bg-violet-950", text: "text-violet-200", font: "font-sans" }
@@ -84,7 +88,7 @@ export function PhoneMockup() {
     {
       id: 2,
       author: "anisa_putri",
-      avatarColor: "bg-[#FF5722]",
+      avatarColor: "bg-[#EC4899]",
       content: "Mengapa media sosial modern terasa begitu melelahkan? Terlalu banyak video auto-play, gambar komparatif, dan algoritma yang sengaja memancing emosi negatif. Back to basics is the best way.",
       time: "4j lalu",
       likes: 45,
@@ -115,7 +119,7 @@ export function PhoneMockup() {
           onClick={() => setActiveTab("feed")}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
             activeTab === "feed"
-              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(255,87,34,0.15)]"
+              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(76,111,255,0.15)]"
               : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700"
           }`}
         >
@@ -127,7 +131,7 @@ export function PhoneMockup() {
           onClick={() => setActiveTab("story")}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
             activeTab === "story"
-              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(255,87,34,0.15)]"
+              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(76,111,255,0.15)]"
               : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700"
           }`}
         >
@@ -139,7 +143,7 @@ export function PhoneMockup() {
           onClick={() => setActiveTab("chat")}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
             activeTab === "chat"
-              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(255,87,34,0.15)]"
+              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(76,111,255,0.15)]"
               : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700"
           }`}
         >
@@ -151,7 +155,7 @@ export function PhoneMockup() {
           onClick={() => setActiveTab("profile")}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-all cursor-pointer ${
             activeTab === "profile"
-              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(255,87,34,0.15)]"
+              ? "bg-brand/10 border-brand text-brand shadow-[0_0_12px_rgba(76,111,255,0.15)]"
               : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700"
           }`}
         >
@@ -162,7 +166,7 @@ export function PhoneMockup() {
 
       {/* Main Interactive Phone Display */}
       <div className="relative mx-auto w-full max-w-[310px] h-[610px] bg-black rounded-[42px] border-8 border-zinc-800 shadow-2xl overflow-hidden flex flex-col shrink-0 ring-4 ring-zinc-900">
-        
+
         {/* Android Notch / Speaker / Camera */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 h-6 w-36 bg-zinc-800 rounded-b-2xl z-50 flex items-center justify-center">
           <div className="w-12 h-1 bg-black rounded-full" />
@@ -179,8 +183,9 @@ export function PhoneMockup() {
 
         {/* Dynamic Mobile App Header */}
         <div className="h-12 border-b border-zinc-900 bg-zinc-950 px-4 flex items-center justify-between shrink-0">
-          <span className="text-sm font-extrabold text-brand tracking-tight flex items-center gap-1">
-            OpenText
+          <span className="flex items-center gap-1.5">
+            <img src={`${import.meta.env.BASE_URL}app-icon.png`} alt="OpenText" className="w-5 h-5 rounded-md" />
+            <span className="text-sm font-extrabold text-white tracking-tight">OpenText</span>
           </span>
           <div className="flex gap-2">
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 font-mono">
@@ -191,7 +196,7 @@ export function PhoneMockup() {
 
         {/* Dynamic Mobile Screen Body */}
         <div className="flex-1 bg-zinc-950 overflow-y-auto no-scrollbar flex flex-col">
-          
+
           {/* SCREEN: HOME FEED */}
           {activeTab === "feed" && (
             <div className="p-3 space-y-3 flex-1 flex flex-col justify-start">
@@ -253,7 +258,7 @@ export function PhoneMockup() {
                   )}
 
                   <div className="flex gap-4 pt-1 text-[10px] text-zinc-500 font-mono select-none">
-                    <button 
+                    <button
                       onClick={() => toggleLike(post.id)}
                       className={`flex items-center gap-1.5 hover:text-red-500 transition-colors cursor-pointer ${post.hasLiked ? "text-red-500" : ""}`}
                     >
@@ -382,7 +387,7 @@ export function PhoneMockup() {
               {/* Profile Card */}
               <div className="p-3 bg-zinc-900/40 rounded-xl border border-zinc-900 flex flex-col items-center text-center space-y-1.5">
                 <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center text-white font-extrabold text-lg shadow-[0_0_12px_rgba(255,87,34,0.3)]">
+                  <div className="w-12 h-12 rounded-full bg-brand flex items-center justify-center text-white font-extrabold text-lg shadow-[0_0_12px_rgba(76,111,255,0.3)]">
                     O
                   </div>
                   <div className="absolute -bottom-1 -right-1 bg-zinc-950 p-0.5 rounded-full border border-zinc-800">
@@ -423,7 +428,7 @@ export function PhoneMockup() {
                 <p className="text-[9px] text-zinc-400 leading-relaxed">
                   Versi terbaru <b className="text-white">v1.2.0</b> telah rilis. Kami menambahkan optimasi load chat dan kustomisasi cerita teks.
                 </p>
-                <button 
+                <button
                   onClick={() => alert("Mengunduh APK pembaruan OpenText...")}
                   className="w-full text-center text-[9px] py-1 bg-brand hover:bg-brand-hover text-white font-bold rounded-md transition-colors cursor-pointer"
                 >
@@ -433,6 +438,43 @@ export function PhoneMockup() {
             </div>
           )}
 
+        </div>
+
+        {/* App Bottom Navigation Bar -- persis struktur BottomNavigationBar.kt di app asli */}
+        <div className="h-14 bg-zinc-900/90 border-t border-zinc-900 flex items-center justify-around shrink-0 px-1">
+          <button
+            onClick={() => setActiveTab("feed")}
+            className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+              activeTab === "feed" ? "text-brand-light" : "text-zinc-500"
+            }`}
+          >
+            <Home className="w-4 h-4" fill={activeTab === "feed" ? "currentColor" : "none"} />
+            <span className="text-[7px] font-medium">Beranda</span>
+          </button>
+          <button className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-zinc-500 cursor-pointer">
+            <Search className="w-4 h-4" />
+            <span className="text-[7px] font-medium">Cari</span>
+          </button>
+          <button className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-zinc-500 cursor-pointer">
+            <CirclePlus className="w-4 h-4" />
+            <span className="text-[7px] font-medium">Post</span>
+          </button>
+          <button className="relative flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg text-zinc-500 cursor-pointer">
+            <span className="relative">
+              <Bell className="w-4 h-4" />
+              <span className="absolute -top-1 -right-1.5 min-w-[10px] h-[10px] px-0.5 rounded-full bg-red-500 text-white text-[6px] font-bold flex items-center justify-center leading-none">2</span>
+            </span>
+            <span className="text-[7px] font-medium">Notifikasi</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+              activeTab === "profile" ? "text-brand-light" : "text-zinc-500"
+            }`}
+          >
+            <User className="w-4 h-4" fill={activeTab === "profile" ? "currentColor" : "none"} />
+            <span className="text-[7px] font-medium">Profil</span>
+          </button>
         </div>
 
         {/* Android Home Navigation bar */}

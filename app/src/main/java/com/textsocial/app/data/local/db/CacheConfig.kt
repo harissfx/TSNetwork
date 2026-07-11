@@ -2,6 +2,15 @@ package com.textsocial.app.data.local
 
 import java.util.concurrent.TimeUnit
 
+/**
+ * Pusat pengaturan "berapa lama data boleh dianggap masih segar" (Time To Live)
+ * sebelum aplikasi mengambil data baru dari server lagi.
+ *
+ * Semakin besar nilainya, semakin jarang aplikasi memanggil server -> makin
+ * ringan beban server, tapi data yang ditampilkan makin mungkin sedikit basi.
+ * Nilai-nilai di bawah ini dipilih berdasarkan seberapa sering data tsb
+ * biasanya berubah.
+ */
 object CacheConfig {
     val POSTS_TTL_MS = TimeUnit.MINUTES.toMillis(2)
     val PROFILE_TTL_MS = TimeUnit.MINUTES.toMillis(10)
@@ -13,6 +22,7 @@ object CacheConfig {
     val TRENDING_HASHTAGS_TTL_MS = TimeUnit.MINUTES.toMillis(5)
     val LINK_PREVIEW_TTL_MS = TimeUnit.HOURS.toMillis(24)
 
+    // Meta cache keys untuk data berbentuk list (lihat CacheMetaEntity)
     const val META_KEY_POSTS = "posts_all"
     const val META_KEY_STORIES = "stories_all"
     const val META_KEY_CONVERSATIONS = "conversations_all"

@@ -73,12 +73,23 @@ class EncryptedPreferencesManager(context: Context) {
         sharedPreferences.edit().clear().apply()
     }
 
+    /** Version_code terakhir yang di-dismiss lewat tombol "Nanti" di popup update, supaya
+     *  popup tidak nongol lagi tiap app dibuka untuk versi yang sama -- tetap muncul lagi
+     *  begitu ada version_code baru yang lebih besar dari nilai ini. */
+    fun saveDismissedUpdateVersionCode(versionCode: Int) {
+        sharedPreferences.edit().putInt(KEY_DISMISSED_UPDATE_VERSION_CODE, versionCode).apply()
+    }
+
+    fun getDismissedUpdateVersionCode(): Int {
+        return sharedPreferences.getInt(KEY_DISMISSED_UPDATE_VERSION_CODE, 0)
+    }
+
     companion object {
         private const val KEY_JWT_TOKEN = "jwt_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_USERNAME = "username"
         private const val KEY_AVATAR_COLOR = "avatar_color"
+        private const val KEY_DISMISSED_UPDATE_VERSION_CODE = "dismissed_update_version_code"
     }
 }
-

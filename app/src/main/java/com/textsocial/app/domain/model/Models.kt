@@ -111,6 +111,14 @@ data class FollowListEntry(
     val followsMe: Boolean
 )
 
+data class AppUpdateInfo(
+    val versionCode: Int,
+    val versionName: String,
+    val releaseNotes: String?,
+    val downloadUrl: String,
+    val isForceUpdate: Boolean
+) : Serializable
+
 data class Notification(
     val id: String,
     val type: String,

@@ -39,6 +39,8 @@ object ServiceLocator {
         SupabaseClient.createService(getContext())
     }
 
+    /** Database Room untuk cache lokal (posts, profil, pesan, dll) supaya
+     *  aplikasi tidak selalu memukul server tiap buka layar yang sama. */
     val appDatabase: AppDatabase by lazy {
         AppDatabase.getInstance(getContext())
     }
@@ -61,5 +63,9 @@ object ServiceLocator {
 
     val userRepository: UserRepository by lazy {
         UserRepositoryImpl(apiService, encryptedPreferencesManager, getContext(), appDatabase)
+    }
+
+    val appUpdateRepository: AppUpdateRepository by lazy {
+        AppUpdateRepositoryImpl(apiService, encryptedPreferencesManager)
     }
 }

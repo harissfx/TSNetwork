@@ -239,6 +239,17 @@ class HomeViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
+    // Loading indicator KHUSUS untuk "ambil halaman berikutnya" (infinite scroll),
+    // dipisah dari _isLoading (yang dipakai untuk refresh/load awal) supaya UI bisa
+    // menampilkan spinner kecil di bawah list tanpa mengganggu list yang sudah ada.
+    private val _isLoadingMore = MutableStateFlow(false)
+    val isLoadingMore = _isLoadingMore.asStateFlow()
+
+    // Masih ada halaman berikutnya di server atau tidak -- dipakai buat berhenti
+    // memicu loadMorePosts() begitu sudah mentok ke post paling lama.
+    private val _hasMore = MutableStateFlow(true)
+    val hasMore = _hasMore.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
@@ -296,14 +307,42 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             _error.value = null
-            val result = postRepo.getPosts(hashtag)
+            val result = postRepo.getPosts(hashtag = hashtag)
             _isLoading.value = false
             if (result.isSuccess) {
-                _rawPosts.value = result.getOrDefault(emptyList())
+                val page = result.getOrThrow()
+                _rawPosts.value = page.posts
                 _posts.value = sortForMode(_rawPosts.value, _feedMode.value)
+                _hasMore.value = page.hasMore
             } else {
                 _error.value = "Failed to load feed. Swipe down to retry."
             }
+        }
+    }
+
+    /**
+     * Ambil halaman post berikutnya (dipanggil dari UI saat scroll mendekati akhir list)
+     * dan sambung ke list yang sudah ada, alih-alih menimpanya. Cursor-nya adalah
+     * created_at dari post PALING LAMA yang sudah kita punya sekarang.
+     */
+    fun loadMorePosts() {
+        if (_isLoadingMore.value || _isLoading.value || !_hasMore.value) return
+        val cursor = _rawPosts.value.lastOrNull()?.createdAt ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingMore.value = true
+            val result = postRepo.getPosts(hashtag = _activeHashtag.value, before = cursor)
+            _isLoadingMore.value = false
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                val existingIds = _rawPosts.value.map { it.id }.toSet()
+                val newPosts = page.posts.filterNot { it.id in existingIds }
+                _rawPosts.value = _rawPosts.value + newPosts
+                _posts.value = sortForMode(_rawPosts.value, _feedMode.value)
+                _hasMore.value = page.hasMore
+            }
+            // Gagal load-more secara diam-diam tidak apa-apa -- list yang sudah ada tetap
+            // tampil, user tinggal scroll lagi untuk retry (tidak perlu error besar-besar).
         }
     }
 
@@ -329,6 +368,14 @@ class HomeViewModel : ViewModel() {
     }
 
     fun toggleLike(post: Post) {
+        if (!com.textsocial.app.util.RateLimiter.tryAcquire(
+                "like_post:${post.id}",
+                com.textsocial.app.util.RateLimiter.COOLDOWN_LIKE_MS
+            )
+        ) {
+            return
+        }
+
         val wasLiked = post.isLiked
         val previousCount = post.likesCount
 
@@ -442,9 +489,17 @@ class CreatePostViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     fun createPost() {
         val text = _text.value
         if (text.isBlank() || isSubmitting) return
+        val myId = com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "me_id"
+        if (!com.textsocial.app.util.RateLimiter.tryAcquire(
+                "create_post:$myId",
+                com.textsocial.app.util.RateLimiter.COOLDOWN_CREATE_POST_MS
+            )
+        ) {
+            _error.value = "Terlalu cepat memposting. Tunggu sebentar ya."
+            return
+        }
         isSubmitting = true
 
-        val myId = com.textsocial.app.di.ServiceLocator.encryptedPreferencesManager.getUserId() ?: "me_id"
         val myUsername = prefs.getUsername() ?: "you"
         val tempPost = Post(
             id = "temp-${java.util.UUID.randomUUID()}",
@@ -488,6 +543,14 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments = _comments.asStateFlow()
 
+    // Masih ada komentar lebih baru yang belum dimuat di server (post viral dgn >200
+    // komentar) -- dipakai UI utk nampilin/nyembunyiin tombol "Muat komentar lainnya".
+    private val _hasMoreComments = MutableStateFlow(false)
+    val hasMoreComments = _hasMoreComments.asStateFlow()
+
+    private val _isLoadingMoreComments = MutableStateFlow(false)
+    val isLoadingMoreComments = _isLoadingMoreComments.asStateFlow()
+
     private val _commentText = MutableStateFlow("")
     val commentText = _commentText.asStateFlow()
 
@@ -527,17 +590,43 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
             if (found != null) {
                 _post.value = found
             } else {
-                val postsResult = postRepo.getPosts()
-                if (postsResult.isSuccess) {
-                    val foundFallback = postsResult.getOrNull()?.find { it.id == postId }
-                    _post.value = foundFallback
+                // Dulu fallback-nya narik SELURUH tabel posts cuma buat cari 1 post (mis.
+                // saat dibuka dari notifikasi push dan belum ada di cache feed lokal).
+                // Sekarang query langsung by id di server.
+                val postResult = postRepo.getPostById(postId)
+                if (postResult.isSuccess) {
+                    _post.value = postResult.getOrNull()
                 }
             }
             val commentsResult = postRepo.getComments(postId)
             if (commentsResult.isSuccess) {
-                _comments.value = commentsResult.getOrDefault(emptyList())
+                val page = commentsResult.getOrThrow()
+                _comments.value = page.comments
+                _hasMoreComments.value = page.hasMore
             }
             _isLoading.value = false
+        }
+    }
+
+    /** Dipanggil dari tombol "Muat komentar lainnya" saat post viral punya >200 komentar. */
+    fun loadMoreComments() {
+        val currentPost = _post.value ?: return
+        if (_isLoadingMoreComments.value || !_hasMoreComments.value) return
+        val cursor = _comments.value.lastOrNull()?.createdAt ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingMoreComments.value = true
+            val result = postRepo.getComments(currentPost.id, after = cursor)
+            _isLoadingMoreComments.value = false
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                val existingIds = _comments.value.map { it.id }.toSet()
+                val newComments = page.comments.filterNot { it.id in existingIds }
+                _comments.value = _comments.value + newComments
+                _hasMoreComments.value = page.hasMore
+            }
+            // Gagal load-more diam-diam -- komentar yang sudah ada tetap tampil, user
+            // tinggal tap tombol lagi kalau mau retry (sama polanya dgn loadMorePosts).
         }
     }
 
@@ -557,9 +646,17 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
         val currentPost = _post.value ?: return
         val text = _commentText.value
         if (text.isBlank()) return
-        val parentId = _replyingTo.value?.id
         val prefs = ServiceLocator.encryptedPreferencesManager
         val myId = prefs.getUserId() ?: "me_id"
+        if (!com.textsocial.app.util.RateLimiter.tryAcquire(
+                "create_comment:$myId",
+                com.textsocial.app.util.RateLimiter.COOLDOWN_CREATE_COMMENT_MS
+            )
+        ) {
+            _actionError.value = "Terlalu cepat mengirim komentar. Tunggu sebentar ya."
+            return
+        }
+        val parentId = _replyingTo.value?.id
         val myUsername = prefs.getUsername() ?: "you"
         val tempComment = Comment(
             id = "temp-${java.util.UUID.randomUUID()}",
@@ -582,7 +679,9 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
             if (result.isSuccess) {
                 val commentsResult = postRepo.getComments(currentPost.id)
                 if (commentsResult.isSuccess) {
-                    _comments.value = commentsResult.getOrDefault(emptyList())
+                    val page = commentsResult.getOrThrow()
+                    _comments.value = page.comments
+                    _hasMoreComments.value = page.hasMore
                 }
             } else {
                 _comments.update { list -> list.filterNot { it.id == tempComment.id } }
@@ -593,6 +692,14 @@ class PostDetailViewModel(private val homeViewModel: HomeViewModel) : ViewModel(
     }
 
     fun toggleCommentLike(comment: Comment) {
+        if (!com.textsocial.app.util.RateLimiter.tryAcquire(
+                "like_comment:${comment.id}",
+                com.textsocial.app.util.RateLimiter.COOLDOWN_LIKE_MS
+            )
+        ) {
+            return
+        }
+
         val wasLiked = comment.isLiked
         val previousCount = comment.likesCount
 
@@ -1254,6 +1361,15 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
     private val _posts = MutableStateFlow<List<Post>>(emptyList())
     val posts = _posts.asStateFlow()
 
+    private val _isLoadingMorePosts = MutableStateFlow(false)
+    val isLoadingMorePosts = _isLoadingMorePosts.asStateFlow()
+
+    private val _hasMorePosts = MutableStateFlow(true)
+    val hasMorePosts = _hasMorePosts.asStateFlow()
+
+    // Disimpan supaya loadMorePosts() tahu profil siapa yang sedang di-page-kan.
+    private var currentProfileUserId: String? = null
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
 
@@ -1344,13 +1460,37 @@ class ProfileViewModel(private val homeViewModel: HomeViewModel) : ViewModel() {
                 }
             }
 
-            val postsResult = postRepo.getPosts()
+            // Dulu ini narik SELURUH post di platform lalu difilter di client cuma buat
+            // dapat post milik 1 user -- sangat tidak scalable. Sekarang difilter di server,
+            // dan jumlah totalnya (bukan cuma yang di-load) diambil dari Content-Range.
+            currentProfileUserId = resolvedUserId
+            val postsResult = postRepo.getPostsByUser(resolvedUserId)
             if (postsResult.isSuccess) {
-                val userPosts = postsResult.getOrDefault(emptyList()).filter { it.userId == resolvedUserId }
-                _posts.value = userPosts
-                _user.update { it?.copy(postsCount = userPosts.size) }
+                val page = postsResult.getOrThrow()
+                _posts.value = page.posts
+                _hasMorePosts.value = page.hasMore
+                _user.update { it?.copy(postsCount = page.totalCount ?: page.posts.size) }
             }
             _isLoading.value = false
+        }
+    }
+
+    /** Ambil halaman post berikutnya milik profil yang sedang dibuka (infinite scroll). */
+    fun loadMorePosts() {
+        val userId = currentProfileUserId ?: return
+        if (_isLoadingMorePosts.value || _isLoading.value || !_hasMorePosts.value) return
+        val cursor = _posts.value.lastOrNull()?.createdAt ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingMorePosts.value = true
+            val result = postRepo.getPostsByUser(userId, before = cursor)
+            _isLoadingMorePosts.value = false
+            if (result.isSuccess) {
+                val page = result.getOrThrow()
+                val existingIds = _posts.value.map { it.id }.toSet()
+                _posts.value = _posts.value + page.posts.filterNot { it.id in existingIds }
+                _hasMorePosts.value = page.hasMore
+            }
         }
     }
 
@@ -1583,5 +1723,45 @@ class FollowListViewModel : ViewModel() {
             }
             _followActionLoadingIds.update { it - entry.user.id }
         }
+    }
+}
+class AppUpdateViewModel : ViewModel() {
+    private val appUpdateRepo = ServiceLocator.appUpdateRepository
+
+    private val _updateInfo = MutableStateFlow<AppUpdateInfo?>(null)
+    val updateInfo = _updateInfo.asStateFlow()
+
+    init {
+        // Push "app_update" bisa masuk kapan saja lewat FCM, termasuk selagi app sedang
+        // dibuka (LaunchedEffect(Unit) di AppNavGraph cuma jalan sekali di awal, tidak
+        // otomatis re-check). Dengerin NotificationEventBus (pola sama dengan BadgeViewModel
+        // buat live-update badge) supaya popup ikut muncul saat itu juga, tanpa user
+        // perlu tutup-buka app dulu.
+        viewModelScope.launch {
+            com.textsocial.app.util.NotificationEventBus.events.collect { type ->
+                if (type == "app_update") checkForUpdate()
+            }
+        }
+    }
+
+    /** Dipanggil dari AppNavGraph tiap app dibuka, dan otomatis lagi tiap push "app_update"
+     *  diterima selagi app kebuka. Kalau update-nya sudah pernah di-dismiss user (dan bukan
+     *  force-update), tidak perlu tampilkan dialog lagi. */
+    fun checkForUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = appUpdateRepo.checkForUpdate()
+            val info = result.getOrNull() ?: return@launch
+            val alreadyDismissed = !info.isForceUpdate && info.versionCode <= appUpdateRepo.getDismissedVersionCode()
+            if (!alreadyDismissed) {
+                _updateInfo.value = info
+            }
+        }
+    }
+
+    fun dismiss() {
+        val info = _updateInfo.value ?: return
+        if (info.isForceUpdate) return
+        appUpdateRepo.dismissVersion(info.versionCode)
+        _updateInfo.value = null
     }
 }

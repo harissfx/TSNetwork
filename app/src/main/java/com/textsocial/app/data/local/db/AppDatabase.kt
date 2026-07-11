@@ -31,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trendingHashtagCacheDao(): TrendingHashtagCacheDao
     abstract fun cacheMetaDao(): CacheMetaDao
 
+    /** Bersihkan semua cache lokal, misalnya saat user logout. */
     suspend fun clearAllCache() {
         clearAllTables()
     }
@@ -46,6 +47,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "textsocial_cache.db"
                 )
+                    // Cache murni turunan dari server, jadi aman untuk destroy & rebuild
+                    // kalau ada perubahan skema di update mendatang.
                     .fallbackToDestructiveMigration()
                     .build().also { INSTANCE = it }
             }

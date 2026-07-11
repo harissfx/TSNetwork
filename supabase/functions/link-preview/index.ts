@@ -1,13 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ---- Setup ----
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
 const FETCH_TIMEOUT_MS = 6000;
-const MAX_BYTES_TO_READ = 300_000;
-const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
-const FAILURE_RETRY_MS = 24 * 60 * 60 * 1000;
+const MAX_BYTES_TO_READ = 300_000; // cukup buat <head>, jangan download seluruh halaman
+const CACHE_TTL_MS = 3 * 24 * 60 * 60 * 1000; // 3 hari untuk hasil sukses
+const FAILURE_RETRY_MS = 24 * 60 * 60 * 1000; // 1 hari sebelum retry URL yang sebelumnya gagal
 
 interface LinkPreviewRow {
   url: string;
@@ -19,18 +21,21 @@ interface LinkPreviewRow {
   fetched_at: string;
 }
 
+// ---- Guard: cegah Edge Function dipakai buat fetch alamat internal (SSRF) ----
+
 function isPrivateOrLocalHostname(hostname: string): boolean {
   const h = hostname.toLowerCase();
   if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal")) return true;
 
+  // IPv4 literal check
   const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
     const [a, b] = [parseInt(ipv4[1]), parseInt(ipv4[2])];
-    if (a === 127) return true;
-    if (a === 10) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
+    if (a === 127) return true; // loopback
+    if (a === 10) return true; // private
+    if (a === 172 && b >= 16 && b <= 31) return true; // private
+    if (a === 192 && b === 168) return true; // private
+    if (a === 169 && b === 254) return true; // link-local (termasuk metadata cloud, mis. 169.254.169.254)
     if (a === 0) return true;
     return false;
   }
@@ -43,16 +48,23 @@ function isPrivateOrLocalHostname(hostname: string): boolean {
 async function isSafeUrl(url: URL): Promise<boolean> {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   if (isPrivateOrLocalHostname(url.hostname)) return false;
+
+  // Selain cek hostname literal, coba resolve DNS-nya juga supaya domain yang me-resolve ke
+  // IP internal (DNS rebinding) tetap ketolak. Kalau resolveDns tidak didukung di runtime ini,
+  // lanjut saja dengan hasil cek hostname di atas.
   try {
     const records = await Deno.resolveDns(url.hostname, "A");
     for (const ip of records) {
       if (isPrivateOrLocalHostname(ip)) return false;
     }
   } catch {
+    // resolveDns gagal/unsupported -> abaikan, sudah tertutup oleh cek hostname literal di atas
   }
 
   return true;
 }
+
+// ---- Parsing HTML ----
 
 function decodeHtmlEntities(text: string): string {
   return text
@@ -103,6 +115,7 @@ async function readHtmlCapped(response: Response, maxBytes: number): Promise<str
   try {
     await reader.cancel();
   } catch {
+    // ignore
   }
   const merged = new Uint8Array(received);
   let offset = 0;
@@ -113,6 +126,8 @@ async function readHtmlCapped(response: Response, maxBytes: number): Promise<str
   return new TextDecoder("utf-8", { fatal: false }).decode(merged);
 }
 
+// ---- Fetch + build preview ----
+
 async function fetchPreview(targetUrl: URL): Promise<Omit<LinkPreviewRow, "url" | "fetched_at">> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -122,6 +137,7 @@ async function fetchPreview(targetUrl: URL): Promise<Omit<LinkPreviewRow, "url" 
       signal: controller.signal,
       redirect: "follow",
       headers: {
+        // Beberapa situs menolak/mengembalikan HTML berbeda kalau tidak ada User-Agent mirip browser
         "User-Agent":
           "Mozilla/5.0 (compatible; TSNetworkLinkPreview/1.0; +https://tsnetwork.app)",
         Accept: "text/html,application/xhtml+xml",
@@ -163,6 +179,8 @@ async function fetchPreview(targetUrl: URL): Promise<Omit<LinkPreviewRow, "url" 
   }
 }
 
+// ---- Handler ----
+
 Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") {
@@ -184,6 +202,7 @@ Deno.serve(async (req) => {
 
     const normalizedUrl = parsedUrl.toString();
 
+    // 1. Cek cache dulu
     const { data: cached } = await supabase
       .from("link_previews")
       .select("*")
@@ -198,10 +217,12 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 2. Guard SSRF sebelum benar-benar fetch ke luar
     if (!(await isSafeUrl(parsedUrl))) {
       return new Response(JSON.stringify({ error: "URL not allowed" }), { status: 400 });
     }
 
+    // 3. Fetch & parse, lalu upsert ke cache (service_role, bukan hak akses client biasa)
     const preview = await fetchPreview(parsedUrl);
     const row: LinkPreviewRow = {
       url: normalizedUrl,

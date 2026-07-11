@@ -27,6 +27,14 @@ interface SupabaseApiService {
         @Body request: RecoverPasswordRequest
     ): Response<Void>
 
+    // Butuh Authorization: Bearer <access_token> milik user yang sedang login --
+    // otomatis ditambahkan oleh interceptor di SupabaseClient, jadi tidak perlu
+    // dikirim manual di sini.
+    @PUT("auth/v1/user")
+    suspend fun updatePassword(
+        @Body request: UpdatePasswordRequest
+    ): Response<Void>
+
     @GET("rest/v1/profiles")
     suspend fun getProfile(
         @Query("id") filter: String,
@@ -77,10 +85,43 @@ interface SupabaseApiService {
         @Header("x-upsert") upsert: String = "true"
     ): Response<Void>
 
+    // Feed utama, dipaginasi pakai keyset cursor (bukan offset) supaya query tetap
+    // cepat walau tabel posts sudah berisi jutaan baris -- ditopang index
+    // idx_posts_created_at yang sudah ada. `createdBefore` diisi created_at dari post
+    // TERAKHIR di halaman sebelumnya (format "lt.<ISO8601>"), null untuk halaman pertama.
+    // Retrofit otomatis membuang query param yang null, jadi aman dipanggil tanpa cursor.
     @GET("rest/v1/posts")
     suspend fun getPosts(
         @Query("select") select: String = "*,users:profiles(*)",
-        @Query("order") order: String = "created_at.desc"
+        @Query("order") order: String = "created_at.desc",
+        @Query("created_at") createdBefore: String? = null,
+        @Query("limit") limit: Int = 20
+    ): Response<List<PostDto>>
+
+    // Ambil satu post spesifik lewat id -- dipakai saat post yang dituju (mis. dari deep
+    // link notifikasi) belum ada di cache feed lokal, supaya TIDAK perlu narik seluruh
+    // tabel posts cuma buat cari 1 baris.
+    @GET("rest/v1/posts")
+    suspend fun getPostById(
+        @Query("id") idFilter: String,
+        @Query("select") select: String = "*,users:profiles(*)",
+        @Query("limit") limit: Int = 1
+    ): Response<List<PostDto>>
+
+    // Post milik satu user (dipakai di halaman profil), difilter & dipaginasi di server
+    // lewat query, bukan ambil semua post lalu difilter di client.
+    // Prefer: count=exact bikin Postgrest hitungkan TOTAL baris yang match filter dan
+    // kirim lewat header Content-Range (mis. "0-19/153"), tanpa perlu server ngirim ke
+    // kita semua barisnya -- dipakai buat isi "jumlah post" di halaman profil secara
+    // akurat walau yang benar-benar di-fetch cuma 1 halaman.
+    @Headers("Prefer: count=exact")
+    @GET("rest/v1/posts")
+    suspend fun getPostsByUser(
+        @Query("user_id") userIdFilter: String,
+        @Query("select") select: String = "*,users:profiles(*)",
+        @Query("order") order: String = "created_at.desc",
+        @Query("created_at") createdBefore: String? = null,
+        @Query("limit") limit: Int = 20
     ): Response<List<PostDto>>
 
     @POST("rest/v1/posts")
@@ -104,6 +145,12 @@ interface SupabaseApiService {
         @Query("id") filter: String
     ): Response<Void>
 
+    // NOTE: postIdFilter WAJIB diisi dari caller (mis. "in.(id1,id2,...)") supaya query
+    // di-scope ke halaman post yang lagi ditampilkan, BUKAN seluruh riwayat like user.
+    // Dulu dipanggil dengan postIdFilter = null (cuma userIdFilter), yang narik SEMUA like
+    // milik user tanpa limit -- baik-baik saja untuk user baru, tapi user aktif dengan
+    // ribuan like historis bikin payload & waktu query getPosts/getPostById/getPostsByUser
+    // membengkak terus padahal yang dibutuhkan cuma status like utk beberapa post di layar.
     @GET("rest/v1/likes")
     suspend fun getLikes(
         @Query("post_id") postIdFilter: String?,
@@ -122,11 +169,19 @@ interface SupabaseApiService {
         @Query("user_id") userIdFilter: String
     ): Response<Void>
 
+    // Dipaginasi pakai keyset cursor (sama pola dengan getPosts), bukan offset, supaya
+    // post yang benar-benar viral (>200 komentar) tetap bisa dimuat lewat "load more"
+    // alih-alih terpotong permanen di komentar ke-200. Order-nya ASC (komentar terlama
+    // dulu), jadi cursor "load more" ambil komentar yang LEBIH BARU dari komentar
+    // TERAKHIR yang sudah dimuat (format createdAfter = "gt.<ISO8601>"), null untuk
+    // halaman pertama. Retrofit otomatis buang query param null.
     @GET("rest/v1/comments")
     suspend fun getComments(
         @Query("post_id") postIdFilter: String,
         @Query("select") select: String = "*,users:profiles(*)",
-        @Query("order") order: String = "created_at.asc"
+        @Query("order") order: String = "created_at.asc",
+        @Query("created_at") createdAfter: String? = null,
+        @Query("limit") limit: Int = 200
     ): Response<List<CommentDto>>
 
     @POST("rest/v1/comments")
@@ -162,6 +217,38 @@ interface SupabaseApiService {
     suspend fun getFollowing(
         @Query("follower_id") filter: String,
         @Query("select") select: String = "*"
+    ): Response<List<FollowDto>>
+
+    // Cek satu pasangan follower/following spesifik langsung lewat unique constraint
+    // (follower_id, following_id) -- O(1) index lookup, BUKAN narik seluruh daftar follower
+    // satu akun cuma buat cek "apakah user X ada di dalamnya". Dipakai oleh isFollowing()/
+    // isFollowedBy() yang dulu manggil getFollowers() tanpa limit tiap kali profil dibuka.
+    @GET("rest/v1/follows")
+    suspend fun checkFollowExists(
+        @Query("follower_id") followerIdFilter: String,
+        @Query("following_id") followingIdFilter: String,
+        @Query("select") select: String = "follower_id",
+        @Query("limit") limit: Int = 1
+    ): Response<List<FollowDto>>
+
+    // Hitung jumlah followers/following lewat header Content-Range (Prefer: count=exact),
+    // BUKAN dengan narik seluruh baris lalu di-.size() di client. limit=1 supaya body-nya
+    // minimal -- count di header tetap akurat terhadap SELURUH baris yang match filter,
+    // tidak terpengaruh oleh limit (sama pola dengan getPostsByUser).
+    @Headers("Prefer: count=exact")
+    @GET("rest/v1/follows")
+    suspend fun getFollowersCount(
+        @Query("following_id") filter: String,
+        @Query("select") select: String = "id",
+        @Query("limit") limit: Int = 1
+    ): Response<List<FollowDto>>
+
+    @Headers("Prefer: count=exact")
+    @GET("rest/v1/follows")
+    suspend fun getFollowingCount(
+        @Query("follower_id") filter: String,
+        @Query("select") select: String = "id",
+        @Query("limit") limit: Int = 1
     ): Response<List<FollowDto>>
 
     @POST("rest/v1/follows")
@@ -299,4 +386,15 @@ interface SupabaseApiService {
         @Query("url") urlInFilter: String,
         @Query("select") select: String = "*"
     ): Response<List<LinkPreviewDto>>
+
+    // Ambil rilis Android terbaru yang terdaftar -- diisi manual lewat Supabase dashboard
+    // tiap ada versi baru (lihat README bagian 7). limit=1 + order desc by version_code
+    // cukup buat dapat baris terbaru tanpa perlu narik seluruh riwayat rilis.
+    @GET("rest/v1/app_versions")
+    suspend fun getLatestAppVersion(
+        @Query("platform") platformFilter: String = "eq.android",
+        @Query("select") select: String = "*",
+        @Query("order") order: String = "version_code.desc",
+        @Query("limit") limit: Int = 1
+    ): Response<List<AppVersionDto>>
 }

@@ -4,9 +4,9 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  --color-brand: #FF5722;
-  --color-brand-hover: #E64A19;
-  --color-brand-light: #FF8A65;
+  --color-brand: #4C6FFF;
+  --color-brand-hover: #2F49D8;
+  --color-brand-light: #8CA6FF;
 }
 
 @layer utilities {

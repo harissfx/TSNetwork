@@ -29,6 +29,8 @@
     <string name="section_about">About</string>
     <string name="app_version_label">OpenText Client v1.0.0</string>
     <string name="app_description">A complete open-source text-based social platform built with Kotlin, Jetpack Compose, Retrofit, Supabase Realtime, and Upstash Redis rate-limiting.</string>
+    <string name="view_source_on_github">View source on GitHub</string>
+    <string name="join_whatsapp_channel">Join our WhatsApp channel</string>
     <string name="logout_button">Logout Session</string>
     <string name="update_password_dialog_title">Update Password</string>
     <string name="password_encrypted_note">All password inputs are encrypted in-transit.</string>
@@ -123,6 +125,7 @@
     <string name="no_view">No views recorded yet.</string>
     <string name="rpl_title">Replies</string>
     <string name="rpl_postkos">No replies yet. Start the conversation!</string>
+    <string name="muat_komentar_lain">Load more comments</string>
     <string name="ava_title">Tap the photo to change it from the gallery.</string>
     <string name="war_ava">Letters, numbers, and underscores only; minimum 3 characters.</string>
     <string name="sv_ava">Save</string>
@@ -157,6 +160,8 @@
     <string name="error_resolve_email_failed">Failed to resolve email from username</string>
     <string name="error_api_generic">API error</string>
     <string name="error_password_reset_failed">Failed to request password reset</string>
+    <string name="error_current_password_incorrect">Current password is incorrect</string>
+    <string name="current_password_label">Current Password</string>
     <string name="error_no_refresh_token">No refresh token available</string>
     <string name="error_refresh_token_failed">Failed to refresh token: %1$s</string>
     <string name="error_fetch_posts_failed">Failed to retrieve posts from server: %1$s</string>
@@ -216,4 +221,10 @@
     <string name="notif_empty_mention">No mention notifications yet</string>
     <string name="notif_empty_follow">No follow notifications yet</string>
     <string name="delete_button">Delete</string>
+    <string name="update_dialog_title">New version available</string>
+    <string name="update_dialog_force_title">Update required</string>
+    <string name="update_dialog_message">Version %1$s is available. Update now for the latest features and fixes.</string>
+    <string name="update_dialog_force_message">Version %1$s is required to keep using this app. Please update now.</string>
+    <string name="update_dialog_button_update">Update</string>
+    <string name="update_dialog_button_later">Later</string>
 </resources>

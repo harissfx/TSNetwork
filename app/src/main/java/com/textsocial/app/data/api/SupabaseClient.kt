@@ -28,10 +28,20 @@ object SupabaseClient {
     fun createService(context: Context): SupabaseApiService {
         val prefs = EncryptedPreferencesManager(context)
 
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
+        // HANYA aktif di build debug. Level BODY mencetak seluruh request/response --
+        // termasuk header Authorization (access token) & payload (mis. email, pesan DM) --
+        // ke Logcat. Di build release ini bisa kebaca lewat `adb logcat` di device mana pun
+        // yang punya USB debugging aktif, jadi WAJIB dimatikan sebelum rilis.
+        val loggingInterceptor = if (BuildConfig.DEBUG) {
+            HttpLoggingInterceptor().apply {
+                level = HttpLoggingInterceptor.Level.BODY
+            }
+        } else null
 
+        // Disk cache HTTP (lapisan tambahan di luar cache Room aplikasi).
+        // Berguna untuk request GET identik yang terjadi berdekatan waktu
+        // (mis. dua screen yang sama-sama minta profil user yang sama),
+        // dan sebagai fallback singkat saat koneksi terputus sesaat.
         val httpCache = Cache(
             directory = java.io.File(context.cacheDir, "http_cache"),
             maxSize = 10L * 1024 * 1024 // 10 MB
@@ -58,6 +68,11 @@ object SupabaseClient {
 
                 chain.proceed(requestBuilder.build())
             }
+            // Supabase REST tidak mengirim header Cache-Control, jadi OkHttp
+            // tidak akan pernah menyimpan responsnya ke disk cache tanpa ini.
+            // Network interceptor menambahkan Cache-Control singkat khusus
+            // untuk request GET supaya request identik yang terjadi hampir
+            // bersamaan tidak perlu menembus jaringan dua kali.
             .addNetworkInterceptor { chain ->
                 val request = chain.request()
                 val response = chain.proceed(request)
@@ -119,7 +134,11 @@ object SupabaseClient {
                     }
                 }
             })
-            .addInterceptor(loggingInterceptor)
+            .apply {
+                // Ditambahkan PALING TERAKHIR (kalau ada) supaya yang ke-log adalah request
+                // final setelah semua interceptor lain (auth header, dsb) diterapkan.
+                loggingInterceptor?.let { addInterceptor(it) }
+            }
             .build()
 
         val moshi = Moshi.Builder()

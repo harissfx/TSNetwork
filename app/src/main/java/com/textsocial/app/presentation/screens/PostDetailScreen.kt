@@ -120,6 +120,8 @@ fun PostDetailScreen(
 ) {
     val post by viewModel.post.collectAsState()
     val comments by viewModel.comments.collectAsState()
+    val hasMoreComments by viewModel.hasMoreComments.collectAsState()
+    val isLoadingMoreComments by viewModel.isLoadingMoreComments.collectAsState()
     val commentText by viewModel.commentText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val replyingTo by viewModel.replyingTo.collectAsState()
@@ -610,6 +612,29 @@ fun PostDetailScreen(
                                         .padding(start = 48.dp, top = 2.dp, bottom = 10.dp)
                                         .clickable { expandedRoots = expandedRoots - row.rootId }
                                 )
+                            }
+                        }
+
+                        if (hasMoreComments) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 14.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isLoadingMoreComments) {
+                                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.muat_komentar_lain),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.clickable { viewModel.loadMoreComments() }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

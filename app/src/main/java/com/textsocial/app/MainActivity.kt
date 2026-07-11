@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
 
         ThemeManager.init(this)
         requestNotificationPermissionIfNeeded()
+        handleAppUpdateTapIfAny(intent)
         pendingDeepLinkRoute = routeFromNotificationIntent(intent)
 
         enableEdgeToEdge()
@@ -57,7 +58,22 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleAppUpdateTapIfAny(intent)
         routeFromNotificationIntent(intent)?.let { pendingDeepLinkRoute = it }
+    }
+
+    // Notifikasi "app_update" bukan deep link ke layar dalam app -- tap-nya langsung buka
+    // browser ke download_url (Opsi A, sama seperti tombol "Update" di UpdateDialog),
+    // jadi ditangani terpisah dari routeFromNotificationIntent (yang urusannya nav route).
+    private fun handleAppUpdateTapIfAny(intent: Intent?) {
+        val type = intent?.getStringExtra(NotificationHelper.EXTRA_NOTIF_TYPE) ?: return
+        if (type != "app_update") return
+        val downloadUrl = intent.getStringExtra(NotificationHelper.EXTRA_NOTIF_DOWNLOAD_URL) ?: return
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(downloadUrl)))
+        } catch (e: Exception) {
+            // Tidak ada browser yang bisa menangani link -- diamkan.
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
