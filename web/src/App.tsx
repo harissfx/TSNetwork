@@ -86,9 +86,11 @@ export default function App() {
               className="flex items-center gap-2.5 cursor-pointer group"
               id="nav-logo"
             >
-              <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center text-white font-black text-sm tracking-tighter shadow-[0_0_12px_rgba(255,87,34,0.35)] group-hover:scale-105 transition-transform">
-                OT
-              </div>
+              <img
+                src={`${import.meta.env.BASE_URL}app-icon.png`}
+                alt="OpenText"
+                className="w-8 h-8 rounded-lg shadow-[0_0_12px_rgba(76,111,255,0.35)] group-hover:scale-105 transition-transform"
+              />
               <div className="flex flex-col">
                 <span className="text-white font-extrabold text-base tracking-tight leading-none">OpenText</span>
                 <span className="text-[10px] text-zinc-500 font-mono tracking-wider">Android App</span>
@@ -109,14 +111,14 @@ export default function App() {
                   ← Kembali ke Landing Page
                 </button>
               )}
-              
+
               <div className="h-4 w-[1px] bg-zinc-800" />
-              
+
               <button
                 onClick={() => setViewMode(viewMode === "landing" ? "docs" : "landing")}
                 className={`text-xs font-bold px-4 py-2 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer border ${
-                  viewMode === "docs" 
-                    ? "bg-brand border-brand text-white shadow-[0_0_15px_rgba(255,87,34,0.25)]" 
+                  viewMode === "docs"
+                    ? "bg-brand border-brand text-white shadow-[0_0_15px_rgba(76,111,255,0.25)]"
                     : "bg-zinc-900 border-zinc-800 hover:border-zinc-700 text-zinc-300"
                 }`}
               >
@@ -144,7 +146,7 @@ export default function App() {
                 <BookOpen className="w-3 h-3" />
                 {viewMode === "docs" ? "Landing" : "Docs"}
               </button>
-              
+
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className="p-2 rounded-lg bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
@@ -172,9 +174,9 @@ export default function App() {
                 ← Kembali ke Landing Page
               </button>
             )}
-            
+
             <div className="border-t border-zinc-900 pt-2" />
-            
+
             <button
               onClick={() => { setViewMode(viewMode === "landing" ? "docs" : "landing"); setMobileMenuOpen(false); }}
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-bold bg-brand text-white shadow"
@@ -199,15 +201,15 @@ export default function App() {
       {/* VIEW: LANDING PAGE */}
       {viewMode === "landing" && (
         <div className="space-y-24 pb-20">
-          
+
           {/* SECTION 1: HERO */}
           <header className="relative pt-12 md:pt-20 lg:pt-28 overflow-hidden">
             {/* Background absolute graphic decorations */}
             <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-brand/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-            <div className="absolute top-1/3 right-1/4 w-[350px] h-[350px] bg-[#E64A19]/5 rounded-full blur-3xl translate-x-1/2 pointer-events-none" />
+            <div className="absolute top-1/3 right-1/4 w-[350px] h-[350px] bg-[#2F49D8]/5 rounded-full blur-3xl translate-x-1/2 pointer-events-none" />
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10 space-y-8">
-              
+
               {/* Badge */}
               <div className="inline-flex items-center gap-2 px-3  py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 select-none mx-auto shadow-inner">
                 <span className="flex h-2 w-2 rounded-full bg-brand animate-pulse" />
@@ -229,7 +231,7 @@ export default function App() {
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto pt-2">
                 <a
                   href={`https://github.com/${gitUsername}/${gitRepo}/releases/latest/download/opentext.apk`}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-extrabold shadow-[0_4px_20px_rgba(255,87,34,0.3)] hover:shadow-[0_4px_28px_rgba(255,87,34,0.5)] transition-all cursor-pointer"
+                  className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-sm font-extrabold shadow-[0_4px_20px_rgba(76,111,255,0.3)] hover:shadow-[0_4px_28px_rgba(76,111,255,0.5)] transition-all cursor-pointer"
                   id="btn-download-hero"
                 >
                   <Download className="w-4 h-4" />
@@ -318,7 +320,7 @@ export default function App() {
           {/* SECTION 4: CARA INSTALL (SIDELOAD TUTORIAL) */}
           <section id="install" className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 scroll-mt-20">
             <div className="bg-zinc-900/20 border border-zinc-900 rounded-3xl p-6 sm:p-10 space-y-8">
-              
+
               <div className="text-center space-y-2">
                 <h2 className="text-2xl font-extrabold tracking-tight text-white">Cara Memasang Aplikasi (Sideload)</h2>
                 <p className="text-zinc-400 text-xs sm:text-sm max-w-lg mx-auto">
@@ -327,7 +329,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                
+
                 {/* Step 1 */}
                 <div className="space-y-2.5 text-center md:text-left">
                   <div className="w-8 h-8 rounded-full bg-brand/10 border border-brand/20 flex items-center justify-center text-brand font-mono font-bold text-sm mx-auto md:mx-0">
@@ -443,10 +445,10 @@ export default function App() {
       {viewMode === "docs" && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex flex-col lg:flex-row gap-8">
-            
+
             {/* Documentation Sidebar Menu */}
             <aside className="w-full lg:w-64 shrink-0 space-y-6">
-              
+
               <div className="p-4 bg-zinc-900/40 rounded-xl border border-zinc-900/80">
                 <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider font-mono mb-3">
                   Navigasi Dokumen
@@ -481,11 +483,11 @@ export default function App() {
 
             {/* Documentation Content Area */}
             <main className="flex-1 bg-zinc-900/15 border border-zinc-900/80 rounded-2xl p-6 sm:p-8 space-y-6 min-w-0">
-              
+
               {/* Find active section data */}
               {DOC_SECTIONS.filter(doc => doc.id === activeDocSection).map(doc => (
                 <div key={doc.id} className="space-y-6">
-                  
+
                   {/* Title & Description */}
                   <div className="space-y-3">
                     <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight border-b border-zinc-900 pb-3">
@@ -568,9 +570,9 @@ export default function App() {
       {/* FOOTER */}
       <footer className="bg-zinc-950 border-t border-zinc-900/80 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
-          
+
           <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-zinc-900 pb-8">
-            
+
             {/* Branding */}
             <div className="text-center md:text-left space-y-1.5">
               <div className="flex items-center justify-center md:justify-start gap-2">

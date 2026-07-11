@@ -179,12 +179,12 @@ Selamat datang di rilis stabil terbaru! Kami fokus meningkatkan kehandalan pesan
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <a
                 href={`https://github.com/${username}/${repo}/releases/latest/download/opentext.apk`}
-                className="flex-1 flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-extrabold shadow-[0_4px_14px_rgba(255,87,34,0.2)] hover:shadow-[0_4px_20px_rgba(255,87,34,0.35)] transition-all cursor-pointer"
+                className="flex-1 flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-extrabold shadow-[0_4px_14px_rgba(76,111,255,0.2)] hover:shadow-[0_4px_20px_rgba(76,111,255,0.35)] transition-all cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 Unduh APK Versi Terbaru ({release?.tag_name || "v1.2.0"})
               </a>
-              
+
               <a
                 href={`https://github.com/${username}/${repo}`}
                 target="_blank"
